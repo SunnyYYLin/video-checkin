@@ -103,7 +103,6 @@ class FaceID:
         for i,old_count in enumerate(count_copy):
             if old_count == self.count[i]:
                 self.count[i] = 0
-        print(self.positions,self.count)
 
     def preprocess(self, face_image):
         # 预处理人脸图像并转换为模型所需的输入格式
