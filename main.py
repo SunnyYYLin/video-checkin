@@ -8,7 +8,7 @@ import librosa
 from PIL import Image
 from audio_recognition import VoiceID  
 from face_recognition import FaceID  
-from database_module import Database  
+from database_module6 import Database  
 
 # 读取视频文件并将其分解为图像和音频序列
 def split_video(video_file):
@@ -64,6 +64,7 @@ def recognize(image_frames, audio_frames,voice_id, face_id, database):
 
     # 先进行人脸识别
     process_image_data(image_frames, face_id, face_features)
+    text_list = database.recognize_faces(face_features)
     
     while True:
         # 检查输入数据是否为空
@@ -85,25 +86,26 @@ def recognize(image_frames, audio_frames,voice_id, face_id, database):
 
         # 将特征向量传输给识别系统
         if audio_feature is not None:
-            result = database.compare_feature_vectors(face_features, audio_feature)
+            result = database.recognize_voice(audio_feature)
             # 将识别结果添加到文本列表
-            text_list.append(result)
+            if result not in text_list:
+                text_list.append(result)
     
     return text_list
 
 #主函数
 def main(video_file, image, audio, tag):
     # 创建 VoiceID 实例
-    voice_config = {"param1": "value1", "param2": "value2"}  #参数配置,后续添加
-    voice_id = VoiceID(voice_config)
+    # voice_config = {"param1": "value1", "param2": "value2"}  #参数配置,后续添加
+    voice_id = VoiceID()
 
     # 创建 FaceID 实例
-    face_config = {"param1": "value1", "param2": "value2"}  
+    face_config = {"device": "cuda"}  
     face_id = FaceID(face_config)
 
     # 创建 Database 实例
-    db_config = {"param1": "value1", "param2": "value2"}  
-    database = Database(db_config)
+    # db_config = {}  
+    database = Database()
 
     # 从输入中获取视频文件并进行检测
     if video_file is not None:
@@ -124,24 +126,25 @@ def main(video_file, image, audio, tag):
         # 提取人脸特征
         face_feature = face_id.extract_features(pil_image)
 
-        # 将声音数据转换为音频序列
-        # 以及采样率的元组 (audio_data, sample_rate)
-        audio_data, sample_rate = audio
-        # 将音频数据转换为音频序列
-        # 这里假设每个音频帧的长度为 2048
-        frame_length = 2048
-        hop_length = 512
-        audio_frames = librosa.util.frame(audio_data, frame_length=frame_length, hop_length=hop_length)
-        for audio_frame in audio_frames:
-            # 将每帧声音流转换为 torch.Tensor
-            audio_tensor = torch.tensor(audio_frame)
-            voice_id.add_frames([audio_tensor])
-        audio_feature = voice_id.extract_round_features()
+        # 提取声音特征
+        audio_feature = voice_id.extract_label_features(audio)
 
+        print("正在存储学生特征...")
         # 将样本的人脸特征、声音特征和标签存储到数据库
-        database.store_combined_feature(tag, face_feature, audio_feature)
+        database.store_feature(tag, face_feature, audio_feature)
+        print("学生特征存储完成！")
 
-        #训练KNN模型
-        database.train_knn()
+        num_epochs = 10
+
+        print("正在训练脸部识别孪生网络模型...")
+        database.train_face_siamese_model(num_epochs)
+        print("语音识别模型训练完成！")
+
+        print("正在训练声音识别孪生网络模型...")
+        database.train_voice_siamese_model(num_epochs)
+        print("声音识别模型训练完成！")
 
         return ["Sample input successfully received"]
+
+if __name__ == "__main__":
+    main()
