@@ -1,4 +1,3 @@
-import cv2
 from facenet_pytorch import InceptionResnetV1, MTCNN
 import torch
 from PIL import Image
