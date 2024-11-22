@@ -46,6 +46,8 @@ class FaceID:
             with torch.no_grad():
                 feature_vector = self.model(face_tensor).numpy()
             features.append(feature_vector)
+        if mode == 'enter':
+            return features[0]
         return features
 
     def existed_features(self, feature_vectors, existing_features_list):
