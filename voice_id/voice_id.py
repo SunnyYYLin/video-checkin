@@ -50,6 +50,7 @@ class VoiceID:
             Tensor: The extracted features, (1, emb_dim)
         '''
         rate, wave = label_audio
+        wave = to_tensor(wave)
         wave = resample(wave, rate, ECAPA_SAMPLING_RATE)
         wave = add_channel(wave) # (1, samples)
         print(wave.shape)

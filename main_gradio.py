@@ -14,6 +14,16 @@ img_list = []
 aud_list = []
 name_list = []
 
+config = Config()
+voice_id = VoiceID(config)
+
+# 创建 FaceID 实例
+face_config = {"device": "cuda"}  
+face_id = FaceID(face_config)
+
+# 创建 Database 实例
+# db_config = {}  
+database = Database()
 
 # def main(video=None, image=None, audio=None, tag=None):
 #     if image is not None and audio is not None and isinstance(tag, str) and tag.strip():
@@ -39,7 +49,7 @@ def sample(image, audio, text):
         return "样本输入失败！请确保所有内容都已填写并重新输入！"
     
     try:
-        result = main(image=image, audio=audio, tag=text)
+        result = main(image=image, audio=audio, tag=text )
     except ValueError as e:
         return f"样本输入失败！发生错误：{str(e)}"
     
@@ -73,7 +83,7 @@ def train():
     isTrain = True
     yield "训练中......"
     main(trainlabel=isTrain)
-    return "训练完成！" 
+    yield "训练完成！" 
 
 with gr.Blocks(fill_height=True) as demo:
     
@@ -196,21 +206,12 @@ def recognize(image_frames, audio_frames,voice_id, face_id, database):
     
     return text_list
 
+
+
 #主函数
 def main(video_file=None, image=None, audio=None, tag=None,trainlabel=None):
-    global img_list, aud_list, name_list
-    # 创建 VoiceID 实例
-    # voice_config = {"param1": "value1", "param2": "value2"}  #参数配置,后续添加
-    config = Config()
-    voice_id = VoiceID(config)
-
-    # 创建 FaceID 实例
-    face_config = {"device": "cuda"}  
-    face_id = FaceID(face_config)
-
-    # 创建 Database 实例
-    # db_config = {}  
-    database = Database()
+    global img_list, aud_list, name_list,face_id,voice_id,database
+    
 
     # 从输入中获取视频文件并进行检测
     if video_file is not None:
@@ -251,17 +252,18 @@ def main(video_file=None, image=None, audio=None, tag=None,trainlabel=None):
         # 将样本的人脸特征、声音特征和标签存储到数据库
         database.store_feature(tag, face_feature, audio_feature)
         print("学生特征存储完成！")
+        return {"result": True}
 
-        if trainlabel is not None:
-            num_epochs = 10
+    elif trainlabel is not None:
+        num_epochs = 10
 
-            print("正在训练脸部识别孪生网络模型...")
-            database.train_face_siamese_model(num_epochs)
-            print("语音识别模型训练完成！")
+        print("正在训练脸部识别孪生网络模型...")
+        database.train_face_siamese_model(num_epochs)
+        print("语音识别模型训练完成！")
 
-            print("正在训练声音识别孪生网络模型...")
-            database.train_voice_siamese_model(num_epochs)
-            print("声音识别模型训练完成！")
+        print("正在训练声音识别孪生网络模型...")
+        database.train_voice_siamese_model(num_epochs)
+        print("声音识别模型训练完成！")    
 
         #return ["Sample input successfully received"]
         return {"result": True}

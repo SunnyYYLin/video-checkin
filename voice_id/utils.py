@@ -69,8 +69,7 @@ def resample(samples: torch.Tensor|np.ndarray, src_rate: int, tgt_rate: int) -> 
     if src_rate == tgt_rate:
         return samples
     
-    if isinstance(samples, np.ndarray):
-        is_src_np = True
+    is_src_np = isinstance(samples, np.ndarray)
     # all to tensor
     if not isinstance(samples, torch.Tensor):
         samples = torch.tensor(samples)
