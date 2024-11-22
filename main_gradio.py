@@ -7,12 +7,8 @@ import librosa
 from PIL import Image
 from voice_id import VoiceID  
 from face_id import FaceID  
-<<<<<<< HEAD
 from database import Database
 from config import Config
-=======
-from database import Database  
->>>>>>> 549ab913cd9e08b3e23dcd34562d79480a9dc8a1
 
 imga_list = []
 aud_list = []
@@ -101,11 +97,6 @@ with gr.Blocks(fill_height=True) as demo:
     sample_btn.click(sample, inputs=[img,aud,name], outputs=output_sample)
     check_local_btn.click(waiting_local,inputs=None,outputs=wait_local).then(check_local, inputs=input_check, outputs=[wait_local,output_check_local_true, output_check_local_false, check_local_btn])
 
-    
-<<<<<<< HEAD
-
-=======
->>>>>>> 549ab913cd9e08b3e23dcd34562d79480a9dc8a1
 
 
 # main.py
