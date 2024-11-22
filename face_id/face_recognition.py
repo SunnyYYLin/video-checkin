@@ -42,7 +42,7 @@ class FaceID:
                     faces.append(face)
         features = []
         for face in faces:
-            face_tensor = self.preprocess(face).squeeze  # 将每个人脸转换为张量
+            face_tensor = self.preprocess(face).squeeze()  # 将每个人脸转换为张量
             features.append(face_tensor)
         if mode == 'enter':
             return features[0]
