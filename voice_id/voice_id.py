@@ -1,3 +1,4 @@
+from typing import TypeAlias
 from speechbrain.inference import SpeakerRecognition, SpectralMaskEnhancement
 from torch import Tensor
 import torch
@@ -5,6 +6,9 @@ from torch.nn.utils.rnn import pad_sequence
 import numpy as np
 import torchaudio
 import torchaudio.transforms as T
+from config import Config
+
+Audio = TypeAlias('Audio', tuple[int, np.ndarray])
 
 XVECTOR_SAMPLING_RATE = 16_000
 METRICGAN_SAMPLING_RATE = 16_000
@@ -14,11 +18,11 @@ MAX_ROUND_SECONDS = 1.5
 DEFAULT_RECORD_RATE = 44_100
 
 class VoiceID:
-    def __init__(self, config) -> None:
+    def __init__(self, config: Config) -> None:
         # Load the Silero VAD model
         silero, utils = torch.hub.load(repo_or_dir='snakers4/silero-vad', 
                                       model='silero_vad', trust_repo=True)
-        (self.get_speech_timestamps, _, read_audio, _, _) = utils
+        self.get_speech_timestamps, _, _, _, _ = utils
         self.silero = silero
         
         # Load the ECAPA Voiceprint model
