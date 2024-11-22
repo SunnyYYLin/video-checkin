@@ -2,12 +2,13 @@ import gradio as gr
 import time
 import numpy as np
 import torch
-import moviepy.editor as mp
+import moviepy as mp
 import librosa
 from PIL import Image
 from voice_id import VoiceID  
 from face_id import FaceID  
-from database import Database  
+from database import Database
+from config import Config
 
 imga_list = []
 aud_list = []
@@ -96,7 +97,6 @@ with gr.Blocks(fill_height=True) as demo:
     sample_btn.click(sample, inputs=[img,aud,name], outputs=output_sample)
     check_local_btn.click(waiting_local,inputs=None,outputs=wait_local).then(check_local, inputs=input_check, outputs=[wait_local,output_check_local_true, output_check_local_false, check_local_btn])
 
-    
 
 
 # main.py
@@ -142,7 +142,7 @@ def process_image_data(image_frames, face_id, face_features):
     # 每隔 frame_interval 帧提取一次人脸特征
         if frame_count % frame_interval == 0:
             # 提取人脸特征
-            face_feature = face_id.extract_features(image_frame)
+            face_feature = face_id.extract_features(image_frame,'checkin')
             # 检测并添加新的人脸特征
             face_id.is_new_features([face_feature], face_features)
     
@@ -187,11 +187,12 @@ def recognize(image_frames, audio_frames,voice_id, face_id, database):
     return text_list
 
 #主函数
-def main(video_file=None, image=None, audio=None, tag=None):
+def main(video_file=None, image=None, audio=None, tag=None,trainlabel=None):
     global img_list, aud_list, name_list
     # 创建 VoiceID 实例
     # voice_config = {"param1": "value1", "param2": "value2"}  #参数配置,后续添加
-    voice_id = VoiceID()
+    config = Config()
+    voice_id = VoiceID(config)
 
     # 创建 FaceID 实例
     face_config = {"device": "cuda"}  
@@ -229,7 +230,6 @@ def main(video_file=None, image=None, audio=None, tag=None):
         # aud_list.append(audio)
         name_list.append(tag)
         #将NujmPy数组转换为PIL图像
-        
         pil_image = Image.fromarray(image)
         # 提取人脸特征
         face_feature = face_id.extract_features(pil_image)
@@ -242,21 +242,21 @@ def main(video_file=None, image=None, audio=None, tag=None):
         database.store_feature(tag, face_feature, audio_feature)
         print("学生特征存储完成！")
 
-        num_epochs = 10
+        if trainlabel is not None:
+            num_epochs = 10
 
-        print("正在训练脸部识别孪生网络模型...")
-        database.train_face_siamese_model(num_epochs)
-        print("语音识别模型训练完成！")
+            print("正在训练脸部识别孪生网络模型...")
+            database.train_face_siamese_model(num_epochs)
+            print("语音识别模型训练完成！")
 
-        print("正在训练声音识别孪生网络模型...")
-        database.train_voice_siamese_model(num_epochs)
-        print("声音识别模型训练完成！")
+            print("正在训练声音识别孪生网络模型...")
+            database.train_voice_siamese_model(num_epochs)
+            print("声音识别模型训练完成！")
 
         #return ["Sample input successfully received"]
         return {"result": True}
     
     else:
         return None
-    
-    
+
 demo.launch()

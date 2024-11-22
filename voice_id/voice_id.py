@@ -23,8 +23,7 @@ class VoiceID:
         
         # Load the ECAPA Voiceprint model
         self.ecapa = SpeakerRecognition.from_hparams(
-            source="speechbrain/spkrec-ecapa-voxceleb",
-            savedir="./pretrained_models/spkrec"
+            source="speechbrain/spkrec-ecapa-voxceleb"
         )
         
         # Initialize the record
@@ -52,6 +51,13 @@ class VoiceID:
         
     def extract_round_features(self) -> Tensor:
         round_record = self.preprocess(self.round_cache, self.rate, METRICGAN_SAMPLING_RATE)
+        return self.ecapa.encode_batch(round_record)
+    
+    def extract_label_features(self, chunk) -> Tensor:
+        print(chunk)
+        audio = torch.tensor(chunk[1]).unsqueeze(0)
+        round_record = self.preprocess(audio, chunk[0], METRICGAN_SAMPLING_RATE)
+        print(round_record.shape)
         return self.ecapa.encode_batch(round_record)
     
     def is_round_end(self) -> bool:
@@ -119,3 +125,4 @@ class VoiceID:
         slices = pad_sequence(slices, batch_first=True) # (batch, samples)
         print(slices.shape)
         return self.ecapa.encode_batch(slices, lengths) # (batch, channels, emb_dim)
+    
