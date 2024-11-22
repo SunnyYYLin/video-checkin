@@ -21,6 +21,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import torch.nn.functional as F
+from tqdm import tqdm
 
 class SiameseNetwork(nn.Module):
     """
@@ -173,7 +174,7 @@ class Database:
         dataset = FeaturePairDataset(self.feature_db, feature_type='face')
         dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
 
-        for epoch in range(num_epochs):
+        for epoch in tqdm(range(num_epochs), desc="Training face model"):
             self.face_siamese_model.train()
             total_loss = 0
             for input1, input2, label in dataloader:
@@ -195,7 +196,7 @@ class Database:
         dataset = FeaturePairDataset(self.feature_db, feature_type='voice')
         dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
 
-        for epoch in range(num_epochs):
+        for epoch in tqdm(range(num_epochs), desc="Training voice model"):
             self.voice_siamese_model.train()
             total_loss = 0
             for input1, input2, label in dataloader:

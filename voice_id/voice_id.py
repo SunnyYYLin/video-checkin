@@ -126,6 +126,3 @@ class VoiceID:
         print(slices.shape)
         return self.ecapa.encode_batch(slices, lengths) # (batch, channels, emb_dim)
     
-if __name__ == "__main__":
-    config = Config()
-    voice_id = VoiceID(config)
