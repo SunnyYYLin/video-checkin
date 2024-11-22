@@ -67,6 +67,12 @@ def check_local(video):
         output_check_local_false: gr.Textbox(value="\n".join(false_names), label="缺勤的人", visible=True),
         check_local_btn: gr.Button(visible=False),
     }
+    
+def train():
+    isTrain = True
+    yield "训练中......"
+    main(trainlabel=isTrain)
+    return "训练完成！" 
 
 with gr.Blocks(fill_height=True) as demo:
     
@@ -84,7 +90,9 @@ with gr.Blocks(fill_height=True) as demo:
                 aud = gr.Audio(label="请输入人声")
             name = gr.Textbox(label="请输入人名")
             output_sample = gr.Textbox(label="运行结果")
+            train_status = gr.Textbox(label="训练状态")
             sample_btn = gr.Button("输入样本")
+            begin_btn = gr.Button("开始训练") 
             
     with gr.Tab("视频检测：本地视频版"):
         with gr.Column():
@@ -95,6 +103,7 @@ with gr.Blocks(fill_height=True) as demo:
             output_check_local_false = gr.Textbox(label="检测结果：缺勤的人", visible=False)
 
     sample_btn.click(sample, inputs=[img,aud,name], outputs=output_sample)
+    begin_btn.click(train, inputs=None, outputs=train_status ) 
     check_local_btn.click(waiting_local,inputs=None,outputs=wait_local).then(check_local, inputs=input_check, outputs=[wait_local,output_check_local_true, output_check_local_false, check_local_btn])
 
 
