@@ -2,14 +2,15 @@ import gradio as gr
 import time
 import numpy as np
 import torch
-import moviepy.editor as mp
+import moviepy as mp
 import librosa
 from PIL import Image
 from voice_id import VoiceID  
-from face_recognition import FaceID  
-from database_module6 import Database  
+from face_id import FaceID  
+from database import Database
+from config import Config
 
-img_list = []
+imga_list = []
 aud_list = []
 name_list = []
 
@@ -96,8 +97,6 @@ with gr.Blocks(fill_height=True) as demo:
     sample_btn.click(sample, inputs=[img,aud,name], outputs=output_sample)
     check_local_btn.click(waiting_local,inputs=None,outputs=wait_local).then(check_local, inputs=input_check, outputs=[wait_local,output_check_local_true, output_check_local_false, check_local_btn])
 
-    
-demo.launch()
 
 
 # main.py
@@ -188,11 +187,12 @@ def recognize(image_frames, audio_frames,voice_id, face_id, database):
     return text_list
 
 #主函数
-def main(video_file, image, audio, tag):
+def main(video_file=None, image=None, audio=None, tag=None):
     global img_list, aud_list, name_list
     # 创建 VoiceID 实例
     # voice_config = {"param1": "value1", "param2": "value2"}  #参数配置,后续添加
-    voice_id = VoiceID()
+    config = Config()
+    voice_id = VoiceID(config)
 
     # 创建 FaceID 实例
     face_config = {"device": "cuda"}  
@@ -258,3 +258,5 @@ def main(video_file, image, audio, tag):
     
     else:
         return None
+
+demo.launch()

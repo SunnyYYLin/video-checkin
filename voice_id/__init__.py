@@ -1,1 +1,1 @@
-from speechbrain.pretrained import EncoderClassifier
+from .voice_id import VoiceID
