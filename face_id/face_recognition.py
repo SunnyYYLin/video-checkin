@@ -16,7 +16,7 @@ class FaceID:
         self.width_threshold = width_threshold
         self.height_threshold = height_threshold
 
-    def extract_features(self, image: Image.Image, mode=0):
+    def extract_features(self, image: Image.Image, mode='enter'):
         """
         提取图像中的每个检测到的人脸的特征向量。
         参数:
@@ -26,18 +26,18 @@ class FaceID:
         """
         # 转换图像格式为模型输入的张量格式
         face_positions, _ = self.detect_faces(image)  # 检测并裁剪所有人脸，返回人脸图像列表
-        if mode == 1:
+        if mode == 'checkin':
             self.faces_count(face_positions)
         faces = []
         for (x1, y1, x2, y2) in face_positions:
-            if mode ==1:
+            if mode == 'checkin':
                 width = x2-x1
                 height = y2-y1
                 region = self.is_in_faces((x1,y1,x2,y2))
                 if self.count[self.positions.index(region)] >= self.count_threshold and width>=self.width_threshold and height >= self.height_threshold: #只有满足三种要求的人脸才被认为是有效人脸
                     face = image.crop((x1, y1, x2, y2))
                     faces.append(face)
-            elif mode ==0:
+            elif mode == 'enter':
                     face = image.crop((x1, y1, x2, y2))
                     faces.append(face)
         features = []
