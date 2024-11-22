@@ -2,14 +2,14 @@ import gradio as gr
 import time
 import numpy as np
 import torch
-import moviepy.editor as mp
+import moviepy as mp
 import librosa
 from PIL import Image
 from voice_id import VoiceID  
 from face_id import FaceID  
 from database import Database  
 
-imga_list = []
+img_list = []
 aud_list = []
 name_list = []
 
