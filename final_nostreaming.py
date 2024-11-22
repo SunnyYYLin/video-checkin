@@ -6,7 +6,7 @@ aud_list = []
 name_list = []
 
 
-def main(video=None, image=None, audio=None, tag=None):
+def main(video=None, image=None, audio=None, tag=None, isTrain=None):
     if image is not None and audio is not None and isinstance(tag, str) and tag.strip():
         img_list.append(image)
         aud_list.append(audio)
@@ -17,6 +17,8 @@ def main(video=None, image=None, audio=None, tag=None):
     if video is not None:
         time.sleep(5)
         return {"name1": True, "name2": False, "name3": True}
+    if isTrain is not None:
+        print("开始训练")
     else:
         return None
 
@@ -59,6 +61,14 @@ def check_local(video):
         check_local_btn: gr.Button(visible=False),
     }
 
+def train():
+    yield "训练中..."
+    isTrain = True
+    main(isTrain=isTrain)
+    time.sleep(5)  # Simulate training time
+    yield "训练完成" 
+    
+
 with gr.Blocks(fill_height=True) as demo:
     
     gr.Markdown(
@@ -75,7 +85,9 @@ with gr.Blocks(fill_height=True) as demo:
                 aud = gr.Audio(label="请输入人声")
             name = gr.Textbox(label="请输入人名")
             output_sample = gr.Textbox(label="运行结果")
+            train_status = gr.Textbox(label="训练状态") 
             sample_btn = gr.Button("输入样本")
+            begin_btn = gr.Button("开始训练") 
             
     with gr.Tab("视频检测：本地视频版"):
         with gr.Column():
@@ -86,6 +98,7 @@ with gr.Blocks(fill_height=True) as demo:
             output_check_local_false = gr.Textbox(label="检测结果：缺勤的人", visible=False)
 
     sample_btn.click(sample, inputs=[img,aud,name], outputs=output_sample)
+    begin_btn.click(train, inputs=None, outputs=train_status ) 
     check_local_btn.click(waiting_local,inputs=None,outputs=wait_local).then(check_local, inputs=input_check, outputs=[wait_local,output_check_local_true, output_check_local_false, check_local_btn])
 
     
