@@ -1,4 +1,3 @@
-import cv2
 from facenet_pytorch import InceptionResnetV1, MTCNN
 import torch
 from PIL import Image
@@ -17,7 +16,7 @@ class FaceID:
         self.width_threshold = width_threshold
         self.height_threshold = height_threshold
 
-    def extract_feature(self, image: Image.Image):
+    def extract_features(self, image: Image.Image):
         """
         提取图像中的每个检测到的人脸的特征向量。
         参数:

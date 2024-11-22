@@ -7,7 +7,12 @@ import librosa
 from PIL import Image
 from voice_id import VoiceID  
 from face_id import FaceID  
+<<<<<<< HEAD
+from database import Database
+from config import Config
+=======
 from database import Database  
+>>>>>>> 549ab913cd9e08b3e23dcd34562d79480a9dc8a1
 
 img_list = []
 aud_list = []
@@ -97,6 +102,10 @@ with gr.Blocks(fill_height=True) as demo:
     check_local_btn.click(waiting_local,inputs=None,outputs=wait_local).then(check_local, inputs=input_check, outputs=[wait_local,output_check_local_true, output_check_local_false, check_local_btn])
 
     
+<<<<<<< HEAD
+
+=======
+>>>>>>> 549ab913cd9e08b3e23dcd34562d79480a9dc8a1
 
 
 # main.py
@@ -191,7 +200,8 @@ def main(video_file=None, image=None, audio=None, tag=None):
     global img_list, aud_list, name_list
     # 创建 VoiceID 实例
     # voice_config = {"param1": "value1", "param2": "value2"}  #参数配置,后续添加
-    voice_id = VoiceID()
+    config = Config()
+    voice_id = VoiceID(config)
 
     # 创建 FaceID 实例
     face_config = {"device": "cuda"}  
@@ -257,6 +267,5 @@ def main(video_file=None, image=None, audio=None, tag=None):
     
     else:
         return None
-    
-    
+
 demo.launch()
