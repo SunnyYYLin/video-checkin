@@ -1,12 +1,14 @@
 '''
-刘鑫宇：识别 2024/11/21 18：38
+识别 2024/11/21 18：38
 主要任务是特征存储和点名阶段特征拼接识别
 第六版：没有拼接脸部特征向量和声音特征向量，分开识别；
        尝试应用孪生网络处理面对512维向量的few-shot问题
+    2024/11/22 19:06 增加存储功能，可以存储两个模型的权重文件和读入db.feature[list]，后者需要增加一个接口
 database_module6.py
 class Database:
 Database(config)
 - def __init__(self) -> None
+- save_feature_db(self, filename="feature_db.pt"):将数据库的学生特征存储到 .pt 文件中。
 - store_feature(self, name: str, face_feature_vector: torch.Tensor, voice_feature_vector: torch.Tensor) -> None:输入人名、脸特征向量、声音特征向量，存储到数据库
 - train_face_siamese_model(self, num_epochs: int = 10) -> None:训练面部特征识别的孪生网络模型
 - train_voice_siamese_model(self, num_epochs: int = 10) -> None:训练语音特征识别的孪生网络模型
@@ -22,6 +24,7 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import torch.nn.functional as F
 from tqdm import tqdm
+import os
 
 class SiameseNetwork(nn.Module):
     """
@@ -55,7 +58,6 @@ class SiameseNetwork(nn.Module):
         output2 = self.forward_one(input2)
         return output1, output2
 
-
 class ContrastiveLoss(nn.Module):
     def __init__(self, margin: float = 1.0) -> None:
         """
@@ -80,7 +82,6 @@ class ContrastiveLoss(nn.Module):
                           label * torch.pow(torch.clamp(self.margin - euclidean_distance, min=0.0), 2))
         return loss
 
-
 class FeatureEntry:
     def __init__(self, name: str, face_feature_vector: torch.Tensor, voice_feature_vector: torch.Tensor):
         """
@@ -93,7 +94,6 @@ class FeatureEntry:
         self.name = name
         self.face_feature_vector = face_feature_vector
         self.voice_feature_vector = voice_feature_vector
-
 
 class FeaturePairDataset(Dataset):
     def __init__(self, feature_db: list[FeatureEntry], feature_type: str) -> None:
@@ -149,11 +149,53 @@ class Database:
         数据库类，用于存储学生的面部特征和语音特征，并提供训练和识别功能。
         """
         self.feature_db = []  # 存储特征的条目
+
+        # 加载 feature_db 数据
+        if os.path.exists('feature_db.pt'):
+            # 使用 add_safe_globals 添加 FeatureEntry 以确保安全加载
+            torch.serialization.add_safe_globals([FeatureEntry])  # 确保 FeatureEntry 类被加载
+            self.feature_db = torch.load('feature_db.pt', weights_only=False)  # 禁用 weights_only，以便完全加载对象
+            print("存在feature_db.pt：成功加载学生特征数据库！")
+
+
         self.face_siamese_model = SiameseNetwork(input_dim=512)  # 面部特征孪生网络模型
         self.voice_siamese_model = SiameseNetwork(input_dim=192)  # 语音特征孪生网络模型
-        self.face_optimizer = optim.Adam(self.face_siamese_model.parameters(), lr=0.001)  # 面部模型优化器
-        self.voice_optimizer = optim.Adam(self.voice_siamese_model.parameters(), lr=0.001)  # 语音模型优化器
+
+        # 加载面部模型权重
+        if os.path.exists('face_siamese_model.pt'):
+            try:
+                self.face_siamese_model.load_state_dict(
+                    torch.load("face_siamese_model.pt", weights_only=True)
+                )
+                print("存在face_siamese_model.pt：成功加载面部识别模型权重！可以不训练，直接进行人脸识别")
+            except Exception as e:
+                print(f"加载面部模型失败: {e}")
+        self.face_siamese_model.eval()  # 设置为评估模式
+
+        # 加载语音模型权重
+        if os.path.exists('voice_siamese_model.pt'):
+            try:
+                self.voice_siamese_model.load_state_dict(
+                    torch.load("voice_siamese_model.pt", weights_only=True)
+                )
+                print("存在voice_siamese_model.pt：成功加载语音识别模型权重！可以不训练，直接进行语音识别")
+            except Exception as e:
+                print(f"加载语音模型失败: {e}")
+        self.voice_siamese_model.eval()  # 设置为评估模式
+
+        # 优化器和损失函数
+        self.face_optimizer = optim.Adam(self.face_siamese_model.parameters(), lr=0.001)
+        self.voice_optimizer = optim.Adam(self.voice_siamese_model.parameters(), lr=0.001)
         self.loss_fn = ContrastiveLoss(margin=1.0)  # 对比损失函数
+    
+    def save_feature_db(self, filename="feature_db.pt"):
+        """
+        将数据库的学生特征存储到 .pt 文件中。
+        
+        :param filename: 存储文件的名称，默认为 "feature_db.pt"。
+        """
+        torch.save(self.feature_db, filename)
+        print(f"学生特征存储成功！保存为文件：{filename}")
 
     def store_feature(self, name: str, face_feature_vector: torch.Tensor, voice_feature_vector: torch.Tensor) -> None:
         """
@@ -186,6 +228,10 @@ class Database:
                 total_loss += loss.item()
 
             print(f"面部识别训练 Epoch [{epoch+1}/{num_epochs}], Loss: {total_loss / len(dataloader)}")
+        
+        # 保存训练好的面部模型
+        torch.save(self.face_siamese_model.state_dict(), "face_siamese_model.pt")
+        print("面部识别模型已保存为 'face_siamese_model.pt'.")
 
     def train_voice_siamese_model(self, num_epochs: int = 10) -> None:
         """
@@ -208,6 +254,10 @@ class Database:
                 total_loss += loss.item()
 
             print(f"语音识别训练 Epoch [{epoch+1}/{num_epochs}], Loss: {total_loss / len(dataloader)}")
+        
+        # 保存训练好的语音模型
+        torch.save(self.voice_siamese_model.state_dict(), "voice_siamese_model.pt")
+        print("语音识别模型已保存为 'voice_siamese_model.pt'.")
 
     def recognize_face(self, face_feature_vector: torch.Tensor, threshold=0.5) -> str:
         """
@@ -276,12 +326,11 @@ class Database:
         else:
             return None  # 如果没有找到匹配的学生
         '''
-'''
-主程序调用思路：此代码仅为随机生成数据的例子，可以结合上面代码使用
+
 def main():
     # 初始化数据库
     db = Database()
-
+    
     # 模拟学生特征存储
     print("正在存储学生特征...")
 
@@ -305,6 +354,11 @@ def main():
     db.train_voice_siamese_model(num_epochs=5)
     print("语音识别模型训练完成！")
 
+    # 备份同学姓名、两类特征向量
+    print("正在备份可识别同学信息...")
+    db.save_feature_db(filename="feature_db.pt")
+    print("可识别同学信息备份完成！")
+    
     # 脸部识别
     print("开始批量面部识别...")
     test_face_vectors = [torch.rand(512) for _ in range(5)]
@@ -318,5 +372,5 @@ def main():
     print(f"语音识别结果：{recognized_voice}")
 
 if __name__ == "__main__":
-    main()
-'''
+    # main()
+    pass
