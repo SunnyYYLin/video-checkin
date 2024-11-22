@@ -69,6 +69,7 @@ def check_local(video):
     }
     
 def train():
+
     isTrain = True
     yield "训练中......"
     main(trainlabel=isTrain)
