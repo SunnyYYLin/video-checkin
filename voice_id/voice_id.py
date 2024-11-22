@@ -47,13 +47,13 @@ class VoiceID:
         Args:
             label_audio: Audio: The audio samples to extract features from, (rate, wave)
         Returns:
-            Tensor: The extracted features, (1, emb_dim)
+            Tensor: The extracted features, (emb_dim, )
         '''
         rate, wave = label_audio
         wave = resample(wave, rate, ECAPA_SAMPLING_RATE)
         wave = add_channel(wave) # (1, samples)
         print(wave.shape)
-        features = self.ecapa.encode_batch(wave)
+        features = self.ecapa.encode_batch(wave).sqeeze()
         print(features.shape)
         return features
     
