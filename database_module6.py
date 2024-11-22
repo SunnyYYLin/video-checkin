@@ -208,7 +208,7 @@ class Database:
 
             print(f"语音识别训练 Epoch [{epoch+1}/{num_epochs}], Loss: {total_loss / len(dataloader)}")
 
-    def recognize_face(self, face_feature_vector: torch.Tensor) -> str:
+    def recognize_face(self, face_feature_vector: torch.Tensor, threshold=0.5) -> str:
         """
         识别输入的面部特征向量并返回相应的姓名。
         
@@ -228,6 +228,12 @@ class Database:
                 recognized_name = entry.name
         
         return recognized_name
+        '''
+        if min_distance < threshold:  # 如果最小距离小于阈值，认为匹配成功
+            return recognized_name
+        else:
+            return None  # 如果没有找到匹配的学生
+        '''
     
     def recognize_faces(self, face_features: list[torch.Tensor]) -> list[str]:
         """
@@ -243,7 +249,7 @@ class Database:
         
         return matched_names
 
-    def recognize_voice(self, voice_feature_vector: torch.Tensor) -> str:
+    def recognize_voice(self, voice_feature_vector: torch.Tensor, threshold=0.5) -> str:
         """
         识别输入的语音特征向量并返回相应的姓名。
         
@@ -263,6 +269,12 @@ class Database:
                 recognized_name = entry.name
         
         return recognized_name
+        '''
+        if min_distance < threshold:  # 如果最小距离小于阈值，认为匹配成功
+            return recognized_name
+        else:
+            return None  # 如果没有找到匹配的学生
+        '''
 '''
 主程序调用思路：此代码仅为随机生成数据的例子，可以结合上面代码使用
 def main():
