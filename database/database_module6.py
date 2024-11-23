@@ -390,6 +390,14 @@ def main():
     db.save_feature_db(filename="feature_db.pt")
     print("可识别同学信息备份完成！")
     
+    # 提取所有学生姓名
+    print("检测并提取 feature_db.pt 中的学生姓名...")
+    student_names = db.get_all_names()
+    if student_names:
+        print("提取的学生姓名列表：", student_names)
+    else:
+        print("未找到学生姓名或 feature_db.pt 文件无效。")
+        
     # 脸部识别
     print("开始批量面部识别...")
     test_face_vectors = [torch.rand(512) for _ in range(5)]
