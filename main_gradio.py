@@ -151,15 +151,15 @@ def handle_inputs(mode: str, video_file:str =None,
             print("正在训练声音识别孪生网络模型...")
             database.train_voice_siamese_model(num_epochs)
             print("声音识别模型训练完成！")    
-            # print("正在备份可识别同学信息...")
-            # database.save_feature_db(filename="feature_db.pt")
-            # print("可识别同学信息备份完成！")
+            print("正在备份可识别同学信息...")
+            database.save_feature_db(filename="feature_db.pt")
+            print("可识别同学信息备份完成！")
 
             #return ["Sample input successfully received"]
             return {"result": True}
         
         case "check":
-            test_list = []
+            text_list = []
             face_features = []
             #获取音频序列和图像序列
             print(video_file)
@@ -182,16 +182,10 @@ def handle_inputs(mode: str, video_file:str =None,
                     text_list.append(result)
 
             dict = {}
-            print(test_list)
-            # 检查识别结果是否在名单中
+            if not name_list:
+                name_list=database.get_all_names()
 
-            name_list_file = "name_list.txt"
-            if os.path.exists(name_list_file):
-                with open(name_list_file, "r") as file:
-                    name_list = file.read().splitlines()
-            else:
-                with open(name_list_file, "w") as file:
-                    file.write("\n".join(name_list))
+            # 检查识别结果是否在名单中
             for name in name_list:
                 if name in text_list:
                     dict.update({name: True})
