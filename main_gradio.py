@@ -3,7 +3,7 @@ import time
 import numpy as np
 import torch
 import moviepy as mp
-import librosa
+import os
 from PIL import Image
 from voice_id import VoiceID  
 from face_id import FaceID  
@@ -19,7 +19,7 @@ voice_id = VoiceID(config)
 
 # 创建 FaceID 实例
 face_config = {"device": "cuda"}  
-face_id = FaceID(face_config)
+face_id = FaceID(**face_config)
 
 # 创建 Database 实例
 # db_config = {}  
@@ -49,7 +49,7 @@ def sample(image, audio, text):
         return "样本输入失败！请确保所有内容都已填写并重新输入！"
     
     try:
-        result = main(image=image, audio=audio, tag=text )
+        result = handle_inputs(mode="sample", image=image, audio=audio, tag=text )
     except ValueError as e:
         return f"样本输入失败！发生错误：{str(e)}"
     
@@ -61,7 +61,7 @@ def sample(image, audio, text):
         return "样本输入失败！请重新输入！"
 
 def check_local(video):
-    namedict = main(video=video)
+    namedict = handle_inputs(mode="check", video_file=video)
     if namedict is None: 
         return {
             wait_local: gr.Textbox(label="计算中", visible=False),
@@ -75,14 +75,12 @@ def check_local(video):
         wait_local: gr.Textbox(label="计算中", visible=False),
         output_check_local_true: gr.Textbox(value="\n".join(true_names), label="到教室的人", visible=True),
         output_check_local_false: gr.Textbox(value="\n".join(false_names), label="缺勤的人", visible=True),
-        check_local_btn: gr.Button(visible=False),
+        check_local_btn: gr.Button(visible=True),
     }
     
 def train():
-
-    isTrain = True
     yield "训练中......"
-    main(trainlabel=isTrain)
+    handle_inputs(mode="train")
     yield "训练完成！" 
 
 with gr.Blocks(fill_height=True) as demo:
@@ -107,7 +105,7 @@ with gr.Blocks(fill_height=True) as demo:
             
     with gr.Tab("视频检测：本地视频版"):
         with gr.Column():
-            input_check = gr.Video(label="输入待检测的本地视频")
+            input_check = gr.Video(label="输入待检测的本地视频", format='mp4')
             check_local_btn = gr.Button("开始检测")
             wait_local = gr.Textbox(label="计算中", visible=False)
             output_check_local_true = gr.Textbox(label="检测结果：到教室的人", visible=False)
@@ -117,158 +115,92 @@ with gr.Blocks(fill_height=True) as demo:
     begin_btn.click(train, inputs=None, outputs=train_status ) 
     check_local_btn.click(waiting_local,inputs=None,outputs=wait_local).then(check_local, inputs=input_check, outputs=[wait_local,output_check_local_true, output_check_local_false, check_local_btn])
 
-
-
-# main.py
-
-
-
-# 读取视频文件并将其分解为图像和音频序列
-def split_video(video_file):
-    # 读视频
-    video = mp.VideoFileClip(video_file)
-    # 获取图像序列
-    frames = []
-    for frame in video.iter_frames():
-        frames.append(frame)
-    # 获取音频序列
-    audio = video.audio.to_soundarray()
-    return audio,frames
-
-# 处理音频数据
-def process_audio_data(audio_frames, voice_id):
-    audio_feature = None
-    for audio_frame in audio_frames:
-        # 将每帧声音流转换为 torch.Tensor
-        audio_tensor = torch.tensor(audio_frame)
-        voice_id.add_frames([audio_tensor])
-
-        # 判断一轮问答是否结束
-        if voice_id.is_round_end():
-            audio_feature = voice_id.extract_round_features()
-            # 清除已处理的音频帧
-            del audio_frames[:audio_frames.index(audio_frame) + 1]
-            break  # 假设我们在一轮问答结束后停止处理
-    return audio_feature
-
-# 处理图像数据
-def process_image_data(image_frames, face_id, face_features):
-    # 设置提取人脸特征的间隔帧数
-    frame_interval = 5  # 每隔5帧提取一次人脸特征
-    # 初始化计数器
-    frame_count = 0
-
-    for image_frame in image_frames:
-    # 每隔 frame_interval 帧提取一次人脸特征
-        if frame_count % frame_interval == 0:
-            # 提取人脸特征
-            face_feature = face_id.extract_features(image_frame,'checkin')
-            # 检测并添加新的人脸特征
-            face_id.is_new_features([face_feature], face_features)
-    
-        # 增加计数器
-        frame_count += 1
-
-# 识别
-def recognize(image_frames, audio_frames,voice_id, face_id, database):
-    # 存储特征向量
-    face_features = []
-    text_list = []
-
-    # 先进行人脸识别
-    process_image_data(image_frames, face_id, face_features)
-    text_list = database.recognize_faces(face_features)
-    
-    while True:
-        # 检查输入数据是否为空
-        if not audio_frames:
-            break
-    
-        audio_feature = None
-        for audio_frame in audio_frames:
-            # 将每帧声音流转换为 torch.Tensor
-            audio_tensor = torch.tensor(audio_frame)
-            voice_id.add_frames([audio_tensor])
-
-            # 判断一轮问答是否结束
-            if voice_id.is_round_end():
-                audio_feature = voice_id.extract_round_features()
-                # 清除已处理的音频帧
-                del audio_frames[:audio_frames.index(audio_frame) + 1]
-                break  # 假设我们在一轮问答结束后停止处理    
-
-        # 将特征向量传输给识别系统
-        if audio_feature is not None:
-            result = database.recognize_voice(audio_feature)
-            # 将识别结果添加到文本列表
-            if result not in text_list:
-                text_list.append(result)
-    
-    return text_list
-
-
-
 #主函数
-def main(video_file=None, image=None, audio=None, tag=None,trainlabel=None):
-    global img_list, aud_list, name_list,face_id,voice_id,database
+
+def handle_inputs(mode: str, video_file:str =None, 
+                  image: np.ndarray=None, 
+                  audio: tuple[int, np.ndarray]=None, 
+                  tag: str=None):
     
+    match mode:
+        case "sample":
+            # img_list.append(image)
+            # aud_list.append(audio)
+            name_list.append(tag)
+            #将NujmPy数组转换为PIL图像
+            pil_image = Image.fromarray(image)
+            # 提取人脸特征
+            face_feature = face_id.extract_features(pil_image)
 
-    # 从输入中获取视频文件并进行检测
-    if video_file is not None:
-        test_list = []
+            # 提取声音特征
+            audio_feature = voice_id.extract_label_features(audio)
 
-        #获取音频序列和图像序列
-        audio_frames, image_frames = split_video(video_file)
+            print("正在存储学生特征...")
+            # 将样本的人脸特征、声音特征和标签存储到数据库
+            database.store_feature(tag, face_feature, audio_feature)
+            print("学生特征存储完成！")
+            return {"result": True}
 
-        #识别
-        test_list = recognize(image_frames, audio_frames, voice_id, face_id, database)
+        case "train":
+            num_epochs = 10
+
+            print("正在训练脸部识别孪生网络模型...")
+            database.train_face_siamese_model(num_epochs)
+            print("语音识别模型训练完成！")
+
+            print("正在训练声音识别孪生网络模型...")
+            database.train_voice_siamese_model(num_epochs)
+            print("声音识别模型训练完成！")    
+            # print("正在备份可识别同学信息...")
+            # database.save_feature_db(filename="feature_db.pt")
+            # print("可识别同学信息备份完成！")
+
+            #return ["Sample input successfully received"]
+            return {"result": True}
         
-        dict = {}
-        
-        for name in test_list:
-            if name in name_list:
-                dict.update({name: True})
+        case "check":
+            test_list = []
+            face_features = []
+            #获取音频序列和图像序列
+            print(video_file)
+            video = mp.VideoFileClip(video_file)
+            rate = video.audio.fps
+            audio = video.audio.to_soundarray(fps=rate)
+            images = [Image.fromarray(img_array) for img_array in
+                       video.iter_frames(fps=video.fps, dtype='uint8')]
+
+            #提取图像、音频特征向量
+            face_features = face_id.get_features_list(images)
+            audio_features = voice_id.extract_clip_features((rate, audio.T))
+
+            #识别人脸和声音
+            text_list = database.recognize_faces(face_features)
+            for audio_feature in audio_features:
+                result = database.recognize_voice(audio_feature)
+                # 将识别结果添加到文本列表
+                if result not in text_list:
+                    text_list.append(result)
+
+            dict = {}
+            print(test_list)
+            # 检查识别结果是否在名单中
+
+            name_list_file = "name_list.txt"
+            if os.path.exists(name_list_file):
+                with open(name_list_file, "r") as file:
+                    name_list = file.read().splitlines()
             else:
-                dict.update({name: False})
+                with open(name_list_file, "w") as file:
+                    file.write("\n".join(name_list))
+            for name in name_list:
+                if name in text_list:
+                    dict.update({name: True})
+                else:
+                    dict.update({name: False})
 
-        #return test_list
-        return dict
-    
-    #读入样本数据
-    elif image is not None and audio is not None and tag is not None:
-        
-        # img_list.append(image)
-        # aud_list.append(audio)
-        name_list.append(tag)
-        #将NujmPy数组转换为PIL图像
-        pil_image = Image.fromarray(image)
-        # 提取人脸特征
-        face_feature = face_id.extract_features(pil_image)
+            return dict
 
-        # 提取声音特征
-        audio_feature = voice_id.extract_label_features(audio)
-
-        print("正在存储学生特征...")
-        # 将样本的人脸特征、声音特征和标签存储到数据库
-        database.store_feature(tag, face_feature, audio_feature)
-        print("学生特征存储完成！")
-        return {"result": True}
-
-    elif trainlabel is not None:
-        num_epochs = 10
-
-        print("正在训练脸部识别孪生网络模型...")
-        database.train_face_siamese_model(num_epochs)
-        print("语音识别模型训练完成！")
-
-        print("正在训练声音识别孪生网络模型...")
-        database.train_voice_siamese_model(num_epochs)
-        print("声音识别模型训练完成！")    
-
-        #return ["Sample input successfully received"]
-        return {"result": True}
-    
-    else:
-        return None
+        case _:
+            raise ValueError("Invalid mode! Please provide a valid mode.")
 
 demo.launch()

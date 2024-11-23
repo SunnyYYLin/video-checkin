@@ -54,7 +54,7 @@ class VoiceID:
         wave = resample(wave, rate, ECAPA_SAMPLING_RATE)
         wave = add_channel(wave) # (1, samples)
         print(wave.shape)
-        features = self.ecapa.encode_batch(wave).sqeeze()
+        features = self.ecapa.encode_batch(wave).squeeze()
         print(features.shape)
         return features
     
@@ -104,10 +104,11 @@ class VoiceID:
         '''
         rate, wave = record if record is not None else (DEFAULT_RECORD_RATE, self.record)
         wave = to_tensor(wave)
+        wave = resample(wave, rate, SILERO_SAMPLING_RATE)
         wave = add_channel(wave)
         timestamps = self.get_speech_timestamps(wave, 
                         self.silero, 
-                        sampling_rate=rate,
+                        sampling_rate=SILERO_SAMPLING_RATE,
                         threshold=0.2, return_seconds=True)
         slices = [wave[:, int(stamp['start']*SILERO_SAMPLING_RATE):int(stamp['end']*SILERO_SAMPLING_RATE)]
                   for stamp in timestamps]
@@ -117,7 +118,8 @@ class VoiceID:
         slices = self.get_round_slices(record)
         slices = [slice.squeeze(0)[len(slice)//2:] for slice in slices] # [(samples,) ...]
         lengths = torch.tensor([slice.shape[0] for slice in slices]) # (batch,)
+        if len(lengths)==0:
+            return []
         slices = pad_sequence(slices, batch_first=True) # (batch, samples)
-        print(slices.shape)
         return self.ecapa.encode_batch(slices, lengths) # (batch, channels, emb_dim)
     
