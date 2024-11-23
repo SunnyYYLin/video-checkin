@@ -184,6 +184,14 @@ def handle_inputs(mode: str, video_file:str =None,
             dict = {}
             print(test_list)
             # 检查识别结果是否在名单中
+
+            name_list_file = "name_list.txt"
+            if os.path.exists(name_list_file):
+                with open(name_list_file, "r") as file:
+                    name_list = file.read().splitlines()
+            else:
+                with open(name_list_file, "w") as file:
+                    file.write("\n".join(name_list))
             for name in name_list:
                 if name in text_list:
                     dict.update({name: True})
