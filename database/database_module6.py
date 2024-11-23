@@ -290,7 +290,7 @@ class Database:
         torch.save(self.voice_siamese_model.state_dict(), "voice_siamese_model.pt")
         print("语音识别模型已保存为 'voice_siamese_model.pt'.")
 
-    def recognize_face(self, face_feature_vector: torch.Tensor, threshold) -> str:
+    def recognize_face(self, face_feature_vector: torch.Tensor, threshold=0.5) -> str:
         """
         识别输入的面部特征向量并返回相应的姓名。
         
@@ -331,7 +331,7 @@ class Database:
         
         return matched_names
 
-    def recognize_voice(self, voice_feature_vector: torch.Tensor, threshold) -> str:
+    def recognize_voice(self, voice_feature_vector: torch.Tensor, threshold=0.5) -> str:
         """
         识别输入的语音特征向量并返回相应的姓名。
         
