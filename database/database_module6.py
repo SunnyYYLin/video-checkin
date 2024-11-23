@@ -4,11 +4,13 @@
 第六版：没有拼接脸部特征向量和声音特征向量，分开识别；
        尝试应用孪生网络处理面对512维向量的few-shot问题
     2024/11/22 19:06 增加存储功能，可以存储两个模型的权重文件和读入db.feature[list]，后者需要增加一个接口
+    2024/11/23 14.14 增加全班名单提取函数
 database_module6.py
 class Database:
 Database(config)
 - def __init__(self) -> None
 - save_feature_db(self, filename="feature_db.pt"):将数据库的学生特征存储到 .pt 文件中。
+- get_all_names(self, filename="feature_db.pt") -> list[str]:检测指定的 .pt 文件，提取其中的所有学生姓名。
 - store_feature(self, name: str, face_feature_vector: torch.Tensor, voice_feature_vector: torch.Tensor) -> None:输入人名、脸特征向量、声音特征向量，存储到数据库
 - train_face_siamese_model(self, num_epochs: int = 10) -> None:训练面部特征识别的孪生网络模型
 - train_voice_siamese_model(self, num_epochs: int = 10) -> None:训练语音特征识别的孪生网络模型
@@ -16,6 +18,7 @@ Database(config)
 - recognize_voice(self, input_voice_vector: torch.Tensor) -> str:使用训练好的语音孪生网络模型进行语音识别并返回声音最相似同学
 
 不维护到场同学名单，仅根据当前输入的特征向量来输出识别到的同学
+存储并提取全班同学信息、存储并应用两个模型的权重
 主程序调用思路在代码文件最后
 '''
 import torch
@@ -197,6 +200,34 @@ class Database:
         torch.save(self.feature_db, filename)
         print(f"学生特征存储成功！保存为文件：{filename}")
 
+    def get_all_names(self, filename="feature_db.pt") -> list[str]:
+        """
+        检测指定的 .pt 文件，提取其中的所有学生姓名。
+        
+        :param filename: 存储特征数据库的文件名，默认为 "feature_db.pt"。
+        :return: 包含所有学生姓名的列表。如果文件不存在或加载失败，返回空列表。
+        """
+        if not os.path.exists(filename):
+            print(f"文件 {filename} 不存在！")
+            return []
+
+        try:
+            # 加载 feature_db.pt 文件
+            loaded_db = torch.load(filename, weights_only=False)
+            if not isinstance(loaded_db, list) or not all(isinstance(entry, FeatureEntry) for entry in loaded_db):
+                print(f"文件 {filename} 格式不正确！")
+                return []
+
+            # 提取所有的姓名
+            names = [entry.name for entry in loaded_db]
+
+            # 去重并保持原顺序
+            unique_names = list(dict.fromkeys(names))
+            return unique_names
+        except Exception as e:
+            print(f"加载文件 {filename} 失败：{e}")
+            return []
+
     def store_feature(self, name: str, face_feature_vector: torch.Tensor, voice_feature_vector: torch.Tensor) -> None:
         """
         存储学生的面部特征和语音特征。
@@ -259,7 +290,7 @@ class Database:
         torch.save(self.voice_siamese_model.state_dict(), "voice_siamese_model.pt")
         print("语音识别模型已保存为 'voice_siamese_model.pt'.")
 
-    def recognize_face(self, face_feature_vector: torch.Tensor, threshold=0.5) -> str:
+    def recognize_face(self, face_feature_vector: torch.Tensor, threshold) -> str:
         """
         识别输入的面部特征向量并返回相应的姓名。
         
@@ -300,7 +331,7 @@ class Database:
         
         return matched_names
 
-    def recognize_voice(self, voice_feature_vector: torch.Tensor, threshold=0.5) -> str:
+    def recognize_voice(self, voice_feature_vector: torch.Tensor, threshold) -> str:
         """
         识别输入的语音特征向量并返回相应的姓名。
         
