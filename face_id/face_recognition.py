@@ -17,17 +17,11 @@ class FaceID:
         self.width_threshold = width_threshold
         self.height_threshold = height_threshold
 
-    def get_features_list(self,video):
+    def get_features_list(self,video: list[Image]):
         features_list = []
-        while video.isOpened():
-            ret, frame = video.read()
-            if not ret:  # 视频结束
-                break
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            frame_pil = Image.fromarray(frame_rgb)
-
-            features = self.extract_features(frame_pil,mode='checkin')
-            self.existed_features(features,features_list)
+        for img in video:
+            features = self.extract_features(img, mode='checkin')
+            self.is_new_feature(features, features_list)
         
         return features_list
 
@@ -59,7 +53,7 @@ class FaceID:
         for face in faces:
             face_tensor = self.preprocess(face)  # 将每个人脸转换为张量
             with torch.no_grad():
-                feature_vector = self.model(face_tensor).numpy().squeeze()
+                feature_vector = self.model(face_tensor).squeeze()
             features.append(feature_vector)
         if mode == 'enter':
             return features[0]
