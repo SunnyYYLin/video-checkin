@@ -54,7 +54,7 @@ class VoiceID:
         wave = resample(wave, rate, ECAPA_SAMPLING_RATE)
         wave = add_channel(wave) # (1, samples)
         print(wave.shape)
-        features = self.ecapa.encode_batch(wave).sqeeze()
+        features = self.ecapa.encode_batch(wave).squeeze()
         print(features.shape)
         return features
     

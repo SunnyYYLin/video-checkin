@@ -49,7 +49,7 @@ def sample(image, audio, text):
         return "样本输入失败！请确保所有内容都已填写并重新输入！"
     
     try:
-        result = main(image=image, audio=audio, tag=text )
+        result = handle_inputs(image=image, audio=audio, tag=text )
     except ValueError as e:
         return f"样本输入失败！发生错误：{str(e)}"
     
@@ -61,7 +61,7 @@ def sample(image, audio, text):
         return "样本输入失败！请重新输入！"
 
 def check_local(video):
-    namedict = main(video=video)
+    namedict = handle_inputs(video_file=video)
     if namedict is None: 
         return {
             wait_local: gr.Textbox(label="计算中", visible=False),
@@ -82,7 +82,7 @@ def train():
 
     isTrain = True
     yield "训练中......"
-    main(trainlabel=isTrain)
+    handle_inputs(trainlabel=isTrain)
     yield "训练完成！" 
 
 with gr.Blocks(fill_height=True) as demo:
@@ -130,6 +130,7 @@ def split_video(video_file):
     # 获取图像序列
     frames = []
     for frame in video.iter_frames():
+        frame = Image.fromarray(frame)
         frames.append(frame)
     # 获取音频序列
     audio = video.audio.to_soundarray()
@@ -209,7 +210,7 @@ def recognize(image_frames, audio_frames,voice_id, face_id, database):
 
 
 #主函数
-def main(video_file=None, image=None, audio=None, tag=None,trainlabel=None):
+def handle_inputs(video_file=None, image=None, audio=None, tag=None,trainlabel=None):
     global img_list, aud_list, name_list,face_id,voice_id,database
     
 
@@ -264,6 +265,10 @@ def main(video_file=None, image=None, audio=None, tag=None,trainlabel=None):
         print("正在训练声音识别孪生网络模型...")
         database.train_voice_siamese_model(num_epochs)
         print("声音识别模型训练完成！")    
+
+        print("正在备份可识别同学信息...")
+        database.save_feature_db(filename="feature_db.pt")
+        print("可识别同学信息备份完成！")
 
         #return ["Sample input successfully received"]
         return {"result": True}
