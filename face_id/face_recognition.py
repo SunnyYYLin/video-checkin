@@ -1,4 +1,5 @@
 from facenet_pytorch import InceptionResnetV1, MTCNN
+import cv2
 import torch
 from PIL import Image
 import numpy as np
@@ -15,6 +16,20 @@ class FaceID:
         self.count_threshold = count_threshold # 连续出现次数的阈值
         self.width_threshold = width_threshold
         self.height_threshold = height_threshold
+
+    def get_features_list(self,video):
+        features_list = []
+        while video.isOpened():
+            ret, frame = video.read()
+            if not ret:  # 视频结束
+                break
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frame_pil = Image.fromarray(frame_rgb)
+
+            features = self.extract_features(frame_pil,mode='checkin')
+            self.existed_features(features,features_list)
+        
+        return features_list
 
     def extract_features(self, image: Image.Image, mode='enter'):
         """
@@ -50,7 +65,7 @@ class FaceID:
             return features[0]
         return features
 
-    def existed_features(self, feature_vectors, existing_features_list):
+    def is_new_feature(self, feature_vectors, existing_features_list):
         """
         检测每个特征向量是否已存在于现有特征列表中，若不存在则加入该列表。
         参数:
