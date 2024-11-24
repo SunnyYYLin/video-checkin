@@ -16,6 +16,16 @@ async def async_call_name(name: str, voice: str= VOICE_SOURCE) -> AudioSegment:
     return AudioSegment.from_file(audio_data, format="mp3")
 
 def call_name(name: str, voice: str=VOICE_SOURCE) -> AudioSegment:
+    """
+    Synchronously calls a name using a specified voice and returns the resulting audio segment.
+
+    Args:
+        name (str): The name to be called.
+        voice (str, optional): The voice to be used for calling the name. Defaults to VOICE_SOURCE.
+
+    Returns:
+        AudioSegment: The audio segment of the called name.
+    """
     return asyncio.run(async_call_name(name, voice))
 
 async def async_call_roll(names: list[str], interval: float=1.5, voice: str=VOICE_SOURCE) -> AudioSegment:
@@ -26,6 +36,15 @@ async def async_call_roll(names: list[str], interval: float=1.5, voice: str=VOIC
     return sum(segments)
 
 def call_roll(names: list[str], interval: float=1.5, voice: str=VOICE_SOURCE) -> AudioSegment:
+    """
+    Calls out a list of names at specified intervals using a given voice.
+    Args:
+        names (list[str]): A list of names to be called out.
+        interval (float, optional): The time interval in seconds between each name call. Defaults to 1.5 seconds.
+        voice (str, optional): The voice source to be used for calling out names. Defaults to VOICE_SOURCE.
+    Returns:
+        AudioSegment: An audio segment containing the concatenated audio of all names called out.
+    """
     return asyncio.run(async_call_roll(names, interval, voice))
 
 if __name__ == "__main__":

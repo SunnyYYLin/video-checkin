@@ -8,7 +8,7 @@ import random
 import string
 import multiprocessing
 from PIL import Image
-from voice_id import VoiceID  
+from voice_id import VoiceID, call_name, call_roll  
 from face_id import FaceID  
 from database import Database
 from config import Config
