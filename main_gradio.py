@@ -4,14 +4,19 @@ import numpy as np
 import torch
 import moviepy as mp
 import os
-import random
-import string
+import base64
+import edge_tts
+from pydub import AudioSegment
+from io import BytesIO
+import asyncio
 import multiprocessing
 from PIL import Image
-from voice_id import VoiceID, call_name, call_roll  
+from voice_id import VoiceID, call_roll  
 from face_id import FaceID  
 from database import Database
 from config import Config
+
+VOICE_SOURCE = 'zh-CN-XiaoxiaoNeural'
 
 img_list = []
 aud_list = []
@@ -156,7 +161,10 @@ def handle_inputs(mode: str, video_file:str =None,
 
         case _:
             raise ValueError("Invalid mode! Please provide a valid mode.")
-        
+
+# 异步任务
+audio_task = None
+
 # 音频处理函数（实时）
 def process_audio(audio_data):
     if audio_data is not None:
@@ -180,24 +188,79 @@ def process_image(image_data):
         else:
             return ""
         # return ''.join(random.choices(string.digits, k=5)) if random.random() < 0.5 else None
-    
+
+async def async_call_name(name: str, voice: str= VOICE_SOURCE) -> AudioSegment:
+    # 使用 edge_tts 异步生成音频数据
+    communicator = edge_tts.Communicate(name, voice)
+    audio_data = BytesIO()
+    async for chunk in communicator.stream():
+        if chunk.get("type") == "audio": # 只处理音频数据
+            audio_data.write(chunk["data"]) # 写入音频数据
+    audio_data.seek(0)
+
+    # 使用 pydub 处理音频数据
+    audio_segment = AudioSegment.from_file(audio_data, format="mp3")
+
+    # 转换为字节流
+    output = BytesIO()
+    audio_segment.export(output, format="mp3")
+    output.seek(0)
+    # 将音频数据编码为 base64 字符串
+    audio_base64 = base64.b64encode(output.read()).decode('utf-8')
+
+    # 生成 HTML 音频标签，包含自动播放属性
+    audio_html = f'<audio controls autoplay><source src="data:audio/mp3;base64,{audio_base64}" type="audio/mpeg"></audio>'
+    return audio_html  
 
 arrived: set[str] = set()  # 记录已经到达
 
+num=0
+sign=True
+
 # 统一的处理函数
-def process(input_data, input_type):
+async def process(input_data, input_type):
     global PROCESS_POOL  # 引用全局进程池
     global arrived
+    global name_list
+    global audio_task
+    global num
+    global sign
+
+    if not name_list:
+                name_list=database.get_all_names()
+
+    if sign & num<len(name_list):
+        audio_html = await async_call_name(name_list[num])
+        sign=False
+    else:
+        audio_html = ""
+
     # 提交任务到进程池
     if input_type == "audio":
         voice_id.add_chunk(input_data)
         if voice_id.is_round_end():
-            audio_arrived = PROCESS_POOL.apply_async(process_audio, args=(input_data,))
-        arrived.add(audio_arrived.get())
+            sign=True
+            if audio_task is None or audio_task.done():
+                audio_task = asyncio.create_task(run_audio_task(input_data))
+            await audio_task
     elif input_type == "image":
-        video_arrived = PROCESS_POOL.apply_async(process_image, args=(input_data,))
-        arrived.add(video_arrived.get())
-    yield f"arrived: {arrived - {None}}\n"
+        video_arrived = await asyncio.get_event_loop().run_in_executor(
+                PROCESS_POOL, process_image, input_data
+            )
+        arrived.add(video_arrived)
+
+    if audio_html:
+        yield f"arrived: {arrived - {None}}\n", audio_html
+    else:
+        yield f"arrived: {arrived - {None}}\n", ""
+
+async def run_audio_task(input_data):
+    global PROCESS_POOL
+    global arrived
+    audio_arrived = await asyncio.get_event_loop().run_in_executor(
+        PROCESS_POOL, process_audio, input_data
+    )
+    arrived.add(audio_arrived)
 
 #这里将控制移到最后，方便与主函数进行交互，并添加了实时检测的逻辑
 
@@ -234,17 +297,18 @@ with gr.Blocks(fill_height=True) as demo:
             with gr.Row():
                 audio_stream = gr.Audio(sources=["microphone"], type="numpy", label="请打开摄像头")
                 image_stream = gr.Image(sources=["webcam"], type="numpy", label="请打开麦克风")
-            stream_output = gr.Textbox(label="检测结果")
+            stream_text_output = gr.Textbox(label="检测结果")
+            stream_html_output = gr.HTML(label="点名")
 
     sample_btn.click(sample, inputs=[img,aud,name], outputs=output_sample)
     begin_btn.click(train, inputs=None, outputs=train_status ) 
     check_local_btn.click(waiting_local,inputs=None,outputs=wait_local).then(check_local, inputs=input_check, outputs=[wait_local,output_check_local_true, output_check_local_false, check_local_btn])
     audio_stream.stream(process, 
                         inputs=[gr.State("aud_stream"), audio_stream],
-                        outputs=stream_output, time_limit=3, stream_every=0.3)
+                        outputs=[stream_text_output,stream_html_output], time_limit=3, stream_every=0.3)
     image_stream.stream(process, 
                         inputs=[gr.State("img_stream"), image_stream],
-                        outputs=stream_output, time_limit=0.001, stream_every=0.001)
+                        outputs=[stream_text_output,stream_html_output], time_limit=0.001, stream_every=0.001)
 
 # 全局进程池
 PROCESS_POOL = multiprocessing.Pool(processes=2)  # 设置进程池的大小，例如 2 个进程
