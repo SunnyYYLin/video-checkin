@@ -4,9 +4,6 @@ import numpy as np
 import torch
 import moviepy as mp
 import os
-import random
-import string
-import multiprocessing
 from PIL import Image
 from voice_id import VoiceID  
 from face_id import FaceID  
@@ -28,6 +25,19 @@ face_id = FaceID(**face_config)
 # db_config = {}  
 database = Database()
 
+# def main(video=None, image=None, audio=None, tag=None):
+#     if image is not None and audio is not None and isinstance(tag, str) and tag.strip():
+#         img_list.append(image)
+#         aud_list.append(audio)
+#         name_list.append(tag)
+#         print(f"Image: {len(img_list)}, Audio: {len(aud_list)}, Tag: {len(name_list)}")
+#         time.sleep(5)
+#         return {"result": True}
+#     if video is not None:
+#         time.sleep(5)
+#         return {"name1": True, "name2": False, "name3": True}
+#     else:
+#         return None
 
 def waiting_local():
     return {
@@ -157,47 +167,6 @@ def handle_inputs(mode: str, video_file:str =None,
         case _:
             raise ValueError("Invalid mode! Please provide a valid mode.")
         
-# 音频处理函数（实时）
-def process_audio(audio_data):
-    if audio_data is not None:
-        audio_feature=voice_id.extract_round_features()
-        text = database.recognize_voice(audio_feature)
-        if text:
-            return text
-        else:
-            return ""
-        
-# 图像处理函数（实时）
-def process_image(image_data):
-    if image_data is not None:
-        # time.sleep(0.2)  # 模拟耗时操作
-        pil_image = Image.fromarray(image_data[1])
-        face_features = face_id.get_features_list([pil_image])
-        text_list = database.recognize_faces(face_features)
-        if text_list:
-            for text in text_list:
-                yield text
-        else:
-            return ""
-        # return ''.join(random.choices(string.digits, k=5)) if random.random() < 0.5 else None
-    
-
-arrived: set[str] = set()  # 记录已经到达
-
-# 统一的处理函数
-def process(input_data, input_type):
-    global PROCESS_POOL  # 引用全局进程池
-    global arrived
-    # 提交任务到进程池
-    if input_type == "audio":
-        voice_id.add_chunk(input_data)
-        if voice_id.is_round_end():
-            audio_arrived = PROCESS_POOL.apply_async(process_audio, args=(input_data,))
-        arrived.add(audio_arrived.get())
-    elif input_type == "image":
-        video_arrived = PROCESS_POOL.apply_async(process_image, args=(input_data,))
-        arrived.add(video_arrived.get())
-    yield f"arrived: {arrived - {None}}\n"
 
 #这里将控制移到最后，方便与主函数进行交互，并添加了实时检测的逻辑
 
@@ -234,20 +203,37 @@ with gr.Blocks(fill_height=True) as demo:
             with gr.Row():
                 audio_stream = gr.Audio(sources=["microphone"], type="numpy", label="请打开摄像头")
                 image_stream = gr.Image(sources=["webcam"], type="numpy", label="请打开麦克风")
+            begin_check_btn = gr.Button("开始检测")
             stream_output = gr.Textbox(label="检测结果")
+            play_signal = gr.State("play")# 不变的开始播放状态
+            play_done = gr.State("done")# 不变的播放完成状态
+            play_state = gr.State("empty")# 变化的调度状态
+            play_audio = gr.Audio(label="播放学生名")
 
     sample_btn.click(sample, inputs=[img,aud,name], outputs=output_sample)
     begin_btn.click(train, inputs=None, outputs=train_status ) 
     check_local_btn.click(waiting_local,inputs=None,outputs=wait_local).then(check_local, inputs=input_check, outputs=[wait_local,output_check_local_true, output_check_local_false, check_local_btn])
-    audio_stream.stream(process, 
+    
+    
+    begin_check_btn.click(handle_inputs, inputs=play_signal, outputs=play_audio)
+    play_audio.stop(handle_inputs, inputs=play_done, outputs=play_state)
+    if play_state.value == "begin_check":
+        audio_stream.stream(handle_inputs, 
                         inputs=[gr.State("aud_stream"), audio_stream],
-                        outputs=stream_output, time_limit=3, stream_every=0.3)
-    image_stream.stream(process, 
+                        outputs=[stream_output, play_state], time_limit=3, stream_every=0.3)
+        image_stream.stream(handle_inputs, 
                         inputs=[gr.State("img_stream"), image_stream],
-                        outputs=stream_output, time_limit=0.001, stream_every=0.001)
-
-# 全局进程池
-PROCESS_POOL = multiprocessing.Pool(processes=2)  # 设置进程池的大小，例如 2 个进程
+                        outputs=[stream_output, play_state], time_limit=0.001, stream_every=0.001)
+    play_state.change(handle_inputs, inputs=[play_signal, play_state], outputs=play_audio)#这里需要主函数判断一下play_state是否为"check_done"，如果是，则返回音频，否则返回空值，但不知道空值会发生什么
+    
+        
+    
+    
+    
+    
+#首先点击按钮，我将play_signal传给主函数，并接受音频
+#当音频播放完之后，我将播放完的信号play_done传给主函数，主函数返回我play_state="begin_check"
+#我检测到begin_check后将音频和视频流传给主函数进行人名检测，返回stream_output与新的play_state="check_done"
+#我检测play_state的变化，一旦改变，就传递播放信号play_signal给主函数，主函数传给我音频
 
 demo.launch()
-
