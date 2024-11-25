@@ -10,6 +10,7 @@ from pydub import AudioSegment
 from io import BytesIO
 import asyncio
 import multiprocessing
+from concurrent.futures import ProcessPoolExecutor
 from PIL import Image
 from voice_id import VoiceID, call_roll  
 from face_id import FaceID  
@@ -127,7 +128,7 @@ def handle_inputs(mode: str, video_file:str =None,
             text_list = []
             face_features = []
             #获取音频序列和图像序列
-            print(video_file)
+            # print(video_file)
             video = mp.VideoFileClip(video_file)
             rate = video.audio.fps
             audio = video.audio.to_soundarray(fps=rate)
@@ -178,8 +179,7 @@ def process_audio(audio_data):
 # 图像处理函数（实时）
 def process_image(image_data):
     if image_data is not None:
-        # time.sleep(0.2)  # 模拟耗时操作
-        pil_image = Image.fromarray(image_data[1])
+        pil_image = Image.fromarray(image_data)
         face_features = face_id.get_features_list([pil_image])
         text_list = database.recognize_faces(face_features)
         if text_list:
@@ -228,8 +228,11 @@ async def process(input_type, input_data):
 
     if not name_list:
                 name_list=database.get_all_names()
-    print(type(input_data))
-    print(input_data)
+    print(f"type of input_data: {type(input_data)}")
+    print(f"input_data:{input_data}")
+    print(f"type of input_tyoe: {type(input_type)}")
+    print(f"input_type: {input_type}")
+    print(f"arrived: {arrived}")
     if sign and num<len(name_list):
         audio_html = await async_call_name(name_list[num])
         sign=False
@@ -238,18 +241,25 @@ async def process(input_type, input_data):
 
     # 提交任务到进程池
     if input_type == "aud_stream":
+        print(f"size of input_data[1]: {input_data[1].shape}")
         voice_id.add_chunk((input_data[0],input_data[1].T))
-        print(voice_id.is_round_end())
+        print(f"voice_id.is_round_end: {voice_id.is_round_end()}")
         if voice_id.is_round_end():
             sign=True
             num+=1
             if audio_task is None or audio_task.done():
                 audio_task = asyncio.create_task(run_audio_task(input_data))
-            await audio_task
+                result_audio = await audio_task
+                arrived.update(result_audio)
+                print(f"Audio task result: {result_audio}")
+
     elif input_type == "img_stream":
-        print(f"Image shape: {input_data.shape}")
         video_arrived = asyncio.create_task(run_image_task(input_data))
-        arrived.add(await video_arrived)
+        result = await video_arrived
+        arrived.update(result)
+        # print(f"Video task result: {result}")
+
+    print(f"audio_arrived: {arrived}")
 
     if audio_html:
         yield f"arrived: {arrived - {None}}\n", audio_html
