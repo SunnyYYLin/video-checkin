@@ -240,6 +240,7 @@ async def process(input_data, input_type):
         voice_id.add_chunk(input_data)
         if voice_id.is_round_end():
             sign=True
+            num+=1
             if audio_task is None or audio_task.done():
                 audio_task = asyncio.create_task(run_audio_task(input_data))
             await audio_task
@@ -295,8 +296,8 @@ with gr.Blocks(fill_height=True) as demo:
     with gr.Tab("视频检测：实时检测版"):
         with gr.Column():
             with gr.Row():
-                audio_stream = gr.Audio(sources=["microphone"], type="numpy", label="请打开摄像头")
-                image_stream = gr.Image(sources=["webcam"], type="numpy", label="请打开麦克风")
+                audio_stream = gr.Audio(sources=["microphone"], type="numpy", label="请打开麦克风")
+                image_stream = gr.Image(sources=["webcam"], type="numpy", label="请打开摄像头")
             stream_text_output = gr.Textbox(label="检测结果")
             stream_html_output = gr.HTML(label="点名")
 
@@ -309,6 +310,7 @@ with gr.Blocks(fill_height=True) as demo:
     image_stream.stream(process, 
                         inputs=[gr.State("img_stream"), image_stream],
                         outputs=[stream_text_output,stream_html_output], time_limit=0.001, stream_every=0.001)
+
 
 # 全局进程池
 PROCESS_POOL = multiprocessing.Pool(processes=2)  # 设置进程池的大小，例如 2 个进程
