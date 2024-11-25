@@ -155,8 +155,6 @@ class Database:
 
         # 加载 feature_db 数据
         if os.path.exists('feature_db.pt'):
-            # 使用 add_safe_globals 添加 FeatureEntry 以确保安全加载
-            torch.serialization.add_safe_globals([FeatureEntry])  # 确保 FeatureEntry 类被加载
             self.feature_db = torch.load('feature_db.pt', weights_only=False)  # 禁用 weights_only，以便完全加载对象
             print("存在feature_db.pt：成功加载学生特征数据库！")
 
