@@ -310,8 +310,7 @@ with gr.Blocks(fill_height=True) as demo:
                         inputs=[gr.State("img_stream"), image_stream],
                         outputs=[stream_text_output,stream_html_output], time_limit=0.001, stream_every=0.001)
 
-# 全局进程池
-PROCESS_POOL = multiprocessing.Pool(processes=2)  # 设置进程池的大小，例如 2 个进程
-
-demo.launch()
+if __name__ == '__main__':
+    PROCESS_POOL = multiprocessing.Pool(processes=2)  # 设置进程池的大小，例如 2 个进程
+    demo.launch()
 
