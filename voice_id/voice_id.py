@@ -59,10 +59,16 @@ class VoiceID:
         return features
     
     def is_round_end(self) -> bool:
+        """
+        Determines if the current round has ended based on the the round cache
+        Returns:
+            bool: True if the round has ended, False otherwise.
+        """
         if len(self.round_cache)//DEFAULT_RECORD_RATE >= MAX_ROUND_SECONDS:
             return True
         
         round_record = to_tensor(self.round_cache)
+        round_record = resample(round_record, DEFAULT_RECORD_RATE, SILERO_SAMPLING_RATE)
         timestamps = self.get_speech_timestamps(round_record, 
                         self.silero, 
                         sampling_rate=SILERO_SAMPLING_RATE,
@@ -115,6 +121,14 @@ class VoiceID:
         return slices
     
     def extract_clip_features(self, record: Audio) -> torch.Tensor:
+        """
+        Extracts features from an audio clip.
+        Args:
+            record (Audio): An audio recording of a clip from which features are to be extracted.
+        Returns:
+            torch.Tensor: A tensor containing the extracted features. The shape of the tensor is 
+                          (batch, channels, emb_dim). If no slices are found, an empty list is returned.
+        """
         slices = self.get_round_slices(record)
         slices = [slice.squeeze(0)[len(slice)//2:] for slice in slices] # [(samples,) ...]
         lengths = torch.tensor([slice.shape[0] for slice in slices]) # (batch,)

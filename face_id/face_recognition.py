@@ -35,6 +35,8 @@ class FaceID:
         """
         # 转换图像格式为模型输入的张量格式
         face_positions, _ = self.detect_faces(image)  # 检测并裁剪所有人脸，返回人脸图像列表
+        if face_positions is None:
+            return []
         if mode == 'checkin':
             self.faces_count(face_positions)
         faces = []
