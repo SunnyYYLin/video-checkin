@@ -13,36 +13,13 @@ import asyncio
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
 from PIL import Image
-from voice_id import VoiceID, call_roll  
+from voice_id import VoiceID, call_roll, call_name 
 from face_id import FaceID  
 from database import Database
 from config import Config
+from pathlib import Path
 
 VOICE_SOURCE = 'zh-CN-XiaoxiaoNeural'
-
-img_list = []
-aud_list = []
-name_list = []
-
-config = Config()
-voice_id = VoiceID(config)
-
-# 创建 FaceID 实例
-face_config = {"device": "cuda"}  
-face_id = FaceID(**face_config)
-
-# 创建 Database 实例
-# db_config = {}  
-database = Database()
-
-arrived: set[str] = set()  # 记录已经到达
-num=0
-sign=True
-vad_tasks: List[asyncio.Task] = []
-voice_id_tasks: List[asyncio.Task] = []
-database_tasks: List[asyncio.Task] = []
-face_id_tasks: List[asyncio.Task] = []
-tts_tasks: List[asyncio.Task] = []
 
 def waiting_local():
     return {
@@ -172,47 +149,25 @@ def handle_inputs(mode: str, video_file:str =None,
         case _:
             raise ValueError("Invalid mode! Please provide a valid mode.")
 
-async def async_call_name(name: str, voice: str= VOICE_SOURCE) -> AudioSegment:
-    # 使用 edge_tts 异步生成音频数据
-    communicator = edge_tts.Communicate(name, voice)
-    audio_data = BytesIO()
-    async for chunk in communicator.stream():
-        if chunk.get("type") == "audio": # 只处理音频数据
-            audio_data.write(chunk["data"]) # 写入音频数据
-    audio_data.seek(0)
-
-    # 使用 pydub 处理音频数据
-    audio_segment = AudioSegment.from_file(audio_data, format="mp3")
-
-    # # 转换为字节流
-    # output = BytesIO()
-    # audio_segment.export(output, format="mp3")
-    # output.seek(0)
-    # # 将音频数据编码为 base64 字符串
-    # audio_base64 = base64.b64encode(output.read()).decode('utf-8')
-
-    # # 生成 HTML 音频标签，包含自动播放属性
-    # audio_html = f'<audio controls autoplay><source src="data:audio/mp3;base64,{audio_base64}" type="audio/mpeg"></audio>'
-    # return audio_html  
-    return audio_segment
-
-if not name_list:
-                name_list=database.get_all_names()
-
-this_call = asyncio.run(async_call_name(name_list[0]))
+async def async_call_name(name: str, voice: str= VOICE_SOURCE) -> Path:
+    communicate = edge_tts.Communicate(name, voice)
+    out_path = Path(f"audio/{name}.mp3")
+    await communicate.save(out_path)
+    return out_path
 
 async def handle_stream(mode, input_data):
     global PROCESS_POOL
     global arrived
-    global name_list
+    global stream_name_list
     global sign
     global num
-    global this_call
     global vad_tasks
     global voice_id_tasks
     global database_tasks
     global face_id_tasks
-    next_call = None
+    global next_call
+
+    this_call = None
     match mode:
         case "aud_stream":
             voice_id.add_chunk((input_data[0],input_data[1].T))
@@ -221,10 +176,11 @@ async def handle_stream(mode, input_data):
             vad_tasks.append(future)
             for task in vad_tasks:
                 if task.ready() and task.get():
-
+                    print("检测到语音结束")
                     num+=1
-                    if num<len(name_list):
-                        next_call = await async_call_name(name_list[num])
+                    if num<len(stream_name_list):
+                        this_call = next_call
+                        next_call = await async_call_name(stream_name_list[num])
 
                     future_voice_id = PROCESS_POOL.apply_async(voice_id.extract_round_features)
                     voice_id_tasks.append(future_voice_id)
@@ -252,6 +208,8 @@ async def handle_stream(mode, input_data):
                     break
 
         case "start_check":
+            this_call = await async_call_name(stream_name_list[num])
+            next_call = await async_call_name(stream_name_list[num+1])
             return this_call
         
         case _:
@@ -268,60 +226,148 @@ async def handle_stream(mode, input_data):
             database_tasks.remove(task)
             break
     
-    return f"arrived: {arrived - {None}}\n", next_call
+    return f"arrived: {arrived - {None}}\n", this_call
 
 
+def audio_done(txt):
+    print(txt)
+    if txt == "done":
+        return True
+    elif txt == "True":
+        return False
 
+if __name__=="__main__": 
+    img_list = []
+    aud_list = []
+    name_list = []
+    stream_name_list = []
+
+    config = Config()
+    voice_id = VoiceID(config)
+
+    # 创建 FaceID 实例
+    face_config = {"device": "cuda"}  
+    face_id = FaceID(**face_config)
+
+    # 创建 Database 实例
+    # db_config = {}  
+    database = Database()
+
+    arrived: set[str] = set()  # 记录已经到达
+    num=0
+    sign=True
+    vad_tasks: List[asyncio.Task] = []
+    voice_id_tasks: List[asyncio.Task] = []
+    database_tasks: List[asyncio.Task] = []
+    face_id_tasks: List[asyncio.Task] = []
+
+    if not stream_name_list:
+        stream_name_list=database.get_all_names()
+
+    next_call = None
 #这里将控制移到最后，方便与主函数进行交互，并添加了实时检测的逻辑
 
-with gr.Blocks(fill_height=True) as demo:
-    
-    gr.Markdown(
-        """
-        <h1 style="text-align: center;">点到器</h1>
-        <p style="text-align: center;">这是一个结合人脸识别与声纹识别的点到器,可以上传视频来检测到教室的人。</p>
-        """
-    )
-    
-    with gr.Tab("输入样本"):
-        with gr.Column():
-            with gr.Row(equal_height=True):
-                img = gr.Image(label="请输入人脸")
-                aud = gr.Audio(label="请输入人声")
-            name = gr.Textbox(label="请输入人名")
-            output_sample = gr.Textbox(label="运行结果")
-            train_status = gr.Textbox(label="训练状态")
-            sample_btn = gr.Button("输入样本")
-            begin_btn = gr.Button("开始训练") 
-            
-    with gr.Tab("视频检测：本地视频版"):
-        with gr.Column():
-            input_check = gr.Video(label="输入待检测的本地视频", format='mp4')
-            check_local_btn = gr.Button("开始检测")
-            wait_local = gr.Textbox(label="计算中", visible=False)
-            output_check_local_true = gr.Textbox(label="检测结果：到教室的人", visible=False)
-            output_check_local_false = gr.Textbox(label="检测结果：缺勤的人", visible=False)
-            
-    with gr.Tab("视频检测：实时检测版"):
-        with gr.Column():
-            with gr.Row():
-                audio_stream = gr.Audio(sources=["microphone"], type="numpy", label="请打开麦克风")
-                image_stream = gr.Image(sources=["webcam"], type="numpy", label="请打开摄像头")
-            stream_text_output = gr.Textbox(label="检测结果")
-            stream_html_output = gr.HTML(label="点名")
+    with gr.Blocks(fill_height=True) as demo:
+        
+        gr.Markdown(
+            """
+            <h1 style="text-align: center;">点到器</h1>
+            <p style="text-align: center;">这是一个结合人脸识别与声纹识别的点到器,可以上传视频来检测到教室的人。</p>
+            """
+        )
+        
+        with gr.Tab("输入样本"):
+            with gr.Column():
+                with gr.Row(equal_height=True):
+                    img = gr.Image(label="请输入人脸")
+                    aud = gr.Audio(label="请输入人声")
+                name = gr.Textbox(label="请输入人名")
+                output_sample = gr.Textbox(label="运行结果")
+                train_status = gr.Textbox(label="训练状态")
+                sample_btn = gr.Button("输入样本")
+                begin_btn = gr.Button("开始训练") 
+                
+        with gr.Tab("视频检测：本地视频版"):
+            with gr.Column():
+                input_check = gr.Video(label="输入待检测的本地视频", format='mp4')
+                check_local_btn = gr.Button("开始检测")
+                wait_local = gr.Textbox(label="计算中", visible=False)
+                output_check_local_true = gr.Textbox(label="检测结果：到教室的人", visible=False)
+                output_check_local_false = gr.Textbox(label="检测结果：缺勤的人", visible=False)
+                
+        # with gr.Tab("视频检测：实时检测版"):
+        #     with gr.Column():
+        #         with gr.Row():
+        #             audio_stream = gr.Audio(sources=["microphone"], type="numpy", label="请打开麦克风")
+        #             image_stream = gr.Image(sources=["webcam"], type="numpy", label="请打开摄像头")
+        #         stream_text_output = gr.Textbox(label="检测结果")
+        #         stream_html_output = gr.HTML(label="点名")
 
-    sample_btn.click(sample, inputs=[img,aud,name], outputs=output_sample)
-    begin_btn.click(train, inputs=None, outputs=train_status ) 
-    check_local_btn.click(waiting_local,inputs=None,outputs=wait_local).then(check_local, inputs=input_check, outputs=[wait_local,output_check_local_true, output_check_local_false, check_local_btn])
-    audio_stream.stream(process, 
-                        inputs=[gr.State("aud_stream"), audio_stream],
-                        outputs=[stream_text_output,stream_html_output], time_limit=10, stream_every=0.3)
-    image_stream.stream(process, 
-                        inputs=[gr.State("img_stream"), image_stream],
-                        outputs=[stream_text_output,stream_html_output], time_limit=10, stream_every=0.5)
+        # sample_btn.click(sample, inputs=[img,aud,name], outputs=output_sample)
+        # begin_btn.click(train, inputs=None, outputs=train_status ) 
+        # check_local_btn.click(waiting_local,inputs=None,outputs=wait_local).then(check_local, inputs=input_check, outputs=[wait_local,output_check_local_true, output_check_local_false, check_local_btn])
+        # audio_stream.stream(process, 
+        #                     inputs=[gr.State("aud_stream"), audio_stream],
+        #                     outputs=[stream_text_output,stream_html_output], time_limit=10, stream_every=0.3)
+        # image_stream.stream(process, 
+        #                     inputs=[gr.State("img_stream"), image_stream],
+        #                     outputs=[stream_text_output,stream_html_output], time_limit=10, stream_every=0.5)
 
-if __name__=="__main__":
+        with gr.Tab("视频检测：实时检测版"):
+            with gr.Column():
+                with gr.Row():
+                    audio_stream = gr.Audio(sources=["microphone"], type="numpy", label="请打开麦克风")
+                    image_stream = gr.Image(sources=["webcam"], type="numpy", label="请打开摄像头")
+                begin_check_btn = gr.Button("开始检测")
+                stream_output = gr.Textbox(label="检测结果")
+                start_signal = gr.State("start_check")# 不变的开始播放状态
+                # play_done = gr.State("done")# 不变的播放完成状态
+                # play_state = gr.State("False")# 变化的调度状态
+                play_audio = gr.Audio(label="播放学生名", interactive=False, type="filepath", autoplay=True)
+
+        sample_btn.click(sample, inputs=[img,aud,name], outputs=output_sample)
+        begin_btn.click(train, inputs=None, outputs=train_status ) 
+        check_local_btn.click(waiting_local,inputs=None,outputs=wait_local).\
+            then(check_local, inputs=input_check, outputs=[wait_local,output_check_local_true, output_check_local_false, check_local_btn])
+        
+
+        audio_stream.stream(
+                handle_stream,
+                inputs=[gr.State("aud_stream"), audio_stream],
+                outputs=[stream_output, play_audio],
+                time_limit=3,
+                stream_every=0.3,
+                show_progress=True,
+
+            )
+        image_stream.stream(
+                handle_stream,
+                inputs=[gr.State("img_stream"), image_stream],
+                outputs=[stream_output, play_audio],
+                time_limit=0.01,
+                stream_every=0.01,
+                show_progress=True,
+            )
+
+        begin_check_btn.click(handle_stream, inputs=start_signal, outputs=play_audio)
+        # play_audio.stop(audio_done, inputs=play_done, outputs=play_state)
+        # True代表已经播完音频可以开始流式了
+        # if play_state == "True":
+        #     audio_stream.stream(
+        #         handle_stream,
+        #         inputs=[gr.State("aud_stream"), audio_stream],
+        #         outputs=[stream_output, play_audio],
+        #         time_limit=3,
+        #         stream_every=0.3
+        #     )
+        #     image_stream.stream(
+        #         handle_stream,
+        #         inputs=[gr.State("img_stream"), image_stream],
+        #         outputs=[stream_output, play_audio],
+        #         time_limit=0.001,
+        #         stream_every=0.001
+        #     )
+
     # 全局进程池
-    PROCESS_POOL = multiprocessing.Pool(processes=2)  # 设置进程池的大小，例如 2 个进程
+    PROCESS_POOL = multiprocessing.Pool(processes=4)  # 设置进程池的大小，例如 2 个进程
     demo.launch()
-
