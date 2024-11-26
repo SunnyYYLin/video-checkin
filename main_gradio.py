@@ -6,6 +6,7 @@ import moviepy as mp
 import os
 import base64
 import edge_tts
+from typing import List
 from pydub import AudioSegment
 from io import BytesIO
 import asyncio
@@ -34,6 +35,14 @@ face_id = FaceID(**face_config)
 # db_config = {}  
 database = Database()
 
+arrived: set[str] = set()  # 记录已经到达
+num=0
+sign=True
+vad_tasks: List[asyncio.Task] = []
+voice_id_tasks: List[asyncio.Task] = []
+database_tasks: List[asyncio.Task] = []
+face_id_tasks: List[asyncio.Task] = []
+tts_tasks: List[asyncio.Task] = []
 
 def waiting_local():
     return {
@@ -163,32 +172,6 @@ def handle_inputs(mode: str, video_file:str =None,
         case _:
             raise ValueError("Invalid mode! Please provide a valid mode.")
 
-# 异步任务
-audio_task = None
-
-# 音频处理函数（实时）
-def process_audio(audio_data):
-    if audio_data is not None:
-        audio_feature=voice_id.extract_round_features()
-        text = database.recognize_voice(audio_feature)
-        if text:
-            return text
-        else:
-            return ""
-        
-# 图像处理函数（实时）
-def process_image(image_data):
-    if image_data is not None:
-        pil_image = Image.fromarray(image_data)
-        face_features = face_id.get_features_list([pil_image])
-        text_list = database.recognize_faces(face_features)
-        if text_list:
-            for text in text_list:
-                yield text
-        else:
-            return ""
-        # return ''.join(random.choices(string.digits, k=5)) if random.random() < 0.5 else None
-
 async def async_call_name(name: str, voice: str= VOICE_SOURCE) -> AudioSegment:
     # 使用 edge_tts 异步生成音频数据
     communicator = edge_tts.Communicate(name, voice)
@@ -201,81 +184,93 @@ async def async_call_name(name: str, voice: str= VOICE_SOURCE) -> AudioSegment:
     # 使用 pydub 处理音频数据
     audio_segment = AudioSegment.from_file(audio_data, format="mp3")
 
-    # 转换为字节流
-    output = BytesIO()
-    audio_segment.export(output, format="mp3")
-    output.seek(0)
-    # 将音频数据编码为 base64 字符串
-    audio_base64 = base64.b64encode(output.read()).decode('utf-8')
+    # # 转换为字节流
+    # output = BytesIO()
+    # audio_segment.export(output, format="mp3")
+    # output.seek(0)
+    # # 将音频数据编码为 base64 字符串
+    # audio_base64 = base64.b64encode(output.read()).decode('utf-8')
 
-    # 生成 HTML 音频标签，包含自动播放属性
-    audio_html = f'<audio controls autoplay><source src="data:audio/mp3;base64,{audio_base64}" type="audio/mpeg"></audio>'
-    return audio_html  
+    # # 生成 HTML 音频标签，包含自动播放属性
+    # audio_html = f'<audio controls autoplay><source src="data:audio/mp3;base64,{audio_base64}" type="audio/mpeg"></audio>'
+    # return audio_html  
+    return audio_segment
 
-arrived: set[str] = set()  # 记录已经到达
+if not name_list:
+                name_list=database.get_all_names()
 
-num=0
-sign=True
+this_call = asyncio.run(async_call_name(name_list[0]))
 
-# 统一的处理函数
-async def process(input_type, input_data):
-    global PROCESS_POOL  # 引用全局进程池
+async def handle_stream(mode, input_data):
+    global PROCESS_POOL
     global arrived
     global name_list
-    global audio_task
-    global num
     global sign
+    global num
+    global this_call
+    global vad_tasks
+    global voice_id_tasks
+    global database_tasks
+    global face_id_tasks
+    next_call = None
+    match mode:
+        case "aud_stream":
+            voice_id.add_chunk((input_data[0],input_data[1].T))
+            # 提交任务到进程池
+            future = PROCESS_POOL.apply_async(voice_id.is_round_end)
+            vad_tasks.append(future)
+            for task in vad_tasks:
+                if task.ready() and task.get():
 
-    if not name_list:
-                name_list=database.get_all_names()
-    print(f"type of input_data: {type(input_data)}")
-    print(f"input_data:{input_data}")
-    print(f"type of input_tyoe: {type(input_type)}")
-    print(f"input_type: {input_type}")
-    print(f"arrived: {arrived}")
-    if sign and num<len(name_list):
-        audio_html = await async_call_name(name_list[num])
-        sign=False
-    else:
-        audio_html = ""
+                    num+=1
+                    if num<len(name_list):
+                        next_call = await async_call_name(name_list[num])
 
-    # 提交任务到进程池
-    if input_type == "aud_stream":
-        print(f"size of input_data[1]: {input_data[1].shape}")
-        voice_id.add_chunk((input_data[0],input_data[1].T))
-        print(f"voice_id.is_round_end: {voice_id.is_round_end()}")
-        if voice_id.is_round_end():
-            sign=True
-            num+=1
-            if audio_task is None or audio_task.done():
-                audio_task = asyncio.create_task(run_audio_task(input_data))
-                result_audio = await audio_task
-                arrived.update(result_audio)
-                print(f"Audio task result: {result_audio}")
+                    future_voice_id = PROCESS_POOL.apply_async(voice_id.extract_round_features)
+                    voice_id_tasks.append(future_voice_id)
+                    vad_tasks.remove(task)
+                    break
 
-    elif input_type == "img_stream":
-        video_arrived = asyncio.create_task(run_image_task(input_data))
-        result = await video_arrived
-        arrived.update(result)
-        # print(f"Video task result: {result}")
+            for task in voice_id_tasks:
+                if task.ready():
+                    audio_feature = task.get()
+                    future_database = PROCESS_POOL.apply_async(database.recognize_voice, args=(audio_feature,))
+                    database_tasks.append(future_database)
+                    voice_id_tasks.remove(task)
+                    break
 
-    print(f"audio_arrived: {arrived}")
+        case "img_stream":
+            pil_image = Image.fromarray(input_data)
+            future_face_id = PROCESS_POOL.apply_async(face_id.extract_features, args=([pil_image],))
+            face_id_tasks.append(future_face_id)
+            for task in face_id_tasks:
+                if task.ready():
+                    face_features = task.get()
+                    future_database = PROCESS_POOL.apply_async(database.recognize_faces, args=(face_features,))
+                    database_tasks.append(future_database)
+                    face_id_tasks.remove(task)
+                    break
 
-    if audio_html:
-        yield f"arrived: {arrived - {None}}\n", audio_html
-    else:
-        yield f"arrived: {arrived - {None}}\n", ""
+        case "start_check":
+            return this_call
+        
+        case _:
+            raise ValueError("Invalid mode! Please provide a valid mode.")
 
-async def run_audio_task(input_data):
-    global PROCESS_POOL
-    global arrived
-    audio_arrived = await asyncio.to_thread(process_audio, input_data)
-    arrived.add(audio_arrived)
+    for task in database_tasks:
+        if task.ready():
+            if isinstance(task.get(), str): 
+                arrived.add(task.get())
 
-async def run_image_task(input_data):
-    global PROCESS_POOL
-    video_arrived = await asyncio.to_thread(process_image, input_data)
-    return video_arrived
+            elif isinstance(task.get(), list):
+                arrived.update(task.get())
+
+            database_tasks.remove(task)
+            break
+    
+    return f"arrived: {arrived - {None}}\n", next_call
+
+
 
 #这里将控制移到最后，方便与主函数进行交互，并添加了实时检测的逻辑
 
