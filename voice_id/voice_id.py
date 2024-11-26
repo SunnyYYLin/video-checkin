@@ -87,8 +87,8 @@ class VoiceID:
             self.record = wave
             self.round_cache = wave
         else:
-            self.record = np.concatenate([self.record, wave], axis=1)
-            self.round_cache = np.concatenate([self.round_cache, wave], axis=1)
+            self.record = np.concatenate([self.record, wave], axis=-1)
+            self.round_cache = np.concatenate([self.round_cache, wave], axis=-1)
         
     def load_record(self, record: Audio) -> None:
         '''

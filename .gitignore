@@ -163,6 +163,7 @@ cython_debug/
 
 data/
 pretrained_models/
+audio/
 cut.py
 *.mp3
 *.mp4
