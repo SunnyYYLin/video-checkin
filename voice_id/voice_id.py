@@ -72,7 +72,7 @@ class VoiceID:
         timestamps = self.get_speech_timestamps(round_record, 
                         self.silero, 
                         sampling_rate=SILERO_SAMPLING_RATE,
-                        threshold=0.1)
+                        threshold=1)
         return len(timestamps) > 0
     
     def add_chunk(self, chunk: Audio) -> None:

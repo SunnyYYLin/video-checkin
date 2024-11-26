@@ -11,7 +11,7 @@ from pydub import AudioSegment
 from io import BytesIO
 import asyncio
 import multiprocessing
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 from PIL import Image
 from voice_id import VoiceID, call_roll, call_name 
 from face_id import FaceID  
@@ -120,13 +120,20 @@ def handle_inputs(mode: str, video_file:str =None,
             audio = video.audio.to_soundarray(fps=rate)
             images = [Image.fromarray(img_array) for img_array in
                        video.iter_frames(fps=video.fps, dtype='uint8')]
+            images = images[::60]
 
             #提取图像、音频特征向量
+            print("正在提取人脸特征...")
             face_features = face_id.get_features_list(images)
+            print("人脸特征提取完成！")
+            print("正在提取声音特征...")
             audio_features = voice_id.extract_clip_features((rate, audio.T))
+            print("声音特征提取完成！")
 
             #识别人脸和声音
+            print("正在识别人脸和声音...")
             text_list = database.recognize_faces(face_features)
+            print("人脸识别完成！")
             for audio_feature in audio_features:
                 result = database.recognize_voice(audio_feature)
                 # 将识别结果添加到文本列表
@@ -156,7 +163,6 @@ async def async_call_name(name: str, voice: str= VOICE_SOURCE) -> Path:
     return out_path
 
 async def handle_stream(mode, input_data):
-    global PROCESS_POOL
     global arrived
     global stream_name_list
     global sign
@@ -166,46 +172,52 @@ async def handle_stream(mode, input_data):
     global database_tasks
     global face_id_tasks
     global next_call
+    global pool
 
     this_call = None
     match mode:
         case "aud_stream":
+            audio_segment = AudioSegment(
+                input_data[1].tobytes(), 
+                frame_rate=input_data[0], 
+                sample_width=input_data[1].dtype.itemsize, 
+                channels=1
+            )
+            audio_segment.export(f"audio_stream_{time.time()}.wav", format="wav")
             voice_id.add_chunk((input_data[0],input_data[1].T))
-            # 提交任务到进程池
-            future = PROCESS_POOL.apply_async(voice_id.is_round_end)
+            loop = asyncio.get_event_loop()
+            future = loop.run_in_executor(pool, voice_id.is_round_end)
             vad_tasks.append(future)
-            for task in vad_tasks:
-                if task.ready() and task.get():
+            for task in asyncio.as_completed(vad_tasks):
+                task = await task
+                if task:
                     print("检测到语音结束")
                     num+=1
                     if num<len(stream_name_list):
                         this_call = next_call
                         next_call = await async_call_name(stream_name_list[num])
-
-                    future_voice_id = PROCESS_POOL.apply_async(voice_id.extract_round_features)
+                    loop = asyncio.get_event_loop()
+                    future_voice_id = loop.run_in_executor(pool, voice_id.extract_round_features)
                     voice_id_tasks.append(future_voice_id)
-                    vad_tasks.remove(task)
                     break
 
-            for task in voice_id_tasks:
-                if task.ready():
-                    audio_feature = task.get()
-                    future_database = PROCESS_POOL.apply_async(database.recognize_voice, args=(audio_feature,))
+            for task in asyncio.as_completed(voice_id_tasks):
+                    audio_feature = await task
+                    loop = asyncio.get_event_loop()
+                    future_database = loop.run_in_executor(pool, database.recognize_voice, audio_feature)
                     database_tasks.append(future_database)
-                    voice_id_tasks.remove(task)
                     break
 
         case "img_stream":
             pil_image = Image.fromarray(input_data)
-            future_face_id = PROCESS_POOL.apply_async(face_id.extract_features, args=([pil_image],))
+            future_face_id = asyncio.to_thread(face_id.extract_features, pil_image)
             face_id_tasks.append(future_face_id)
-            for task in face_id_tasks:
-                if task.ready():
-                    face_features = task.get()
-                    future_database = PROCESS_POOL.apply_async(database.recognize_faces, args=(face_features,))
-                    database_tasks.append(future_database)
-                    face_id_tasks.remove(task)
-                    break
+            for task in asyncio.as_completed(face_id_tasks):
+                face_features = await task
+                loop = asyncio.get_event_loop()
+                future_database = loop.run_in_executor(pool, database.recognize_faces, face_features)
+                database_tasks.append(future_database)
+                break
 
         case "start_check":
             this_call = await async_call_name(stream_name_list[num])
@@ -215,15 +227,13 @@ async def handle_stream(mode, input_data):
         case _:
             raise ValueError("Invalid mode! Please provide a valid mode.")
 
-    for task in database_tasks:
-        if task.ready():
-            if isinstance(task.get(), str): 
-                arrived.add(task.get())
+    for task in asyncio.as_completed(database_tasks):
+            task = await task
+            if isinstance(task, str): 
+                arrived.add(task)
 
-            elif isinstance(task.get(), list):
-                arrived.update(task.get())
-
-            database_tasks.remove(task)
+            elif isinstance(task, list):
+                arrived.update(task)
             break
     
     return f"arrived: {arrived - {None}}\n", this_call
@@ -369,5 +379,5 @@ if __name__=="__main__":
         #     )
 
     # 全局进程池
-    PROCESS_POOL = multiprocessing.Pool(processes=4)  # 设置进程池的大小，例如 2 个进程
+    pool = ThreadPoolExecutor(max_workers=4)
     demo.launch()
