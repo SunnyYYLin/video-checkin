@@ -8,7 +8,7 @@ class FaceID:
     def __init__(self, threshold=0.4, count_threshold = 12, width_threshold = 20, height_threshold =20, device='cuda'):
         # 初始化模型，设置相似度阈值
         self.device = torch.device(device)
-        self.model = InceptionResnetV1(pretrained='vggface2').eval()
+        self.model = InceptionResnetV1(pretrained='vggface2').to(self.device).eval()
         self.threshold = threshold
         self.mtcnn = MTCNN(keep_all=True, device=self.device)
         self.positions = [] #用来记录各个人脸框的区域
@@ -77,8 +77,8 @@ class FaceID:
         使用余弦相似度判断两个特征向量是否相似。
         """
         # 将特征向量展平为一维
-        feature1 = feature1.flatten()
-        feature2 = feature2.flatten()
+        feature1 = feature1.flatten().cpu().numpy()
+        feature2 = feature2.flatten().cpu().numpy()
         
         # 归一化
         feature1_norm = feature1 / np.linalg.norm(feature1)
@@ -125,7 +125,7 @@ class FaceID:
         # 预处理人脸图像并转换为模型所需的输入格式
         face_image = face_image.resize((160, 160))
         face_tensor = torch.tensor(np.array(face_image) / 255).permute(2, 0, 1).unsqueeze(0).float()
-        return face_tensor
+        return face_tensor.to(self.device)
 
     def detect_faces(self, image):
         faces, probs = self.mtcnn.detect(image)
