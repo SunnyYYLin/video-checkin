@@ -10,6 +10,7 @@ from pydub import AudioSegment
 from io import BytesIO
 import asyncio
 import multiprocessing
+from concurrent.futures import ProcessPoolExecutor
 from PIL import Image
 from voice_id import VoiceID, call_roll  
 from face_id import FaceID  
@@ -86,7 +87,7 @@ def handle_inputs(mode: str, video_file:str =None,
                   image: np.ndarray=None, 
                   audio: tuple[int, np.ndarray]=None, 
                   tag: str=None):
-    
+    global name_list
     match mode:
         case "sample":
             # img_list.append(image)
@@ -127,7 +128,7 @@ def handle_inputs(mode: str, video_file:str =None,
             text_list = []
             face_features = []
             #获取音频序列和图像序列
-            print(video_file)
+            # print(video_file)
             video = mp.VideoFileClip(video_file)
             rate = video.audio.fps
             audio = video.audio.to_soundarray(fps=rate)
@@ -178,8 +179,7 @@ def process_audio(audio_data):
 # 图像处理函数（实时）
 def process_image(image_data):
     if image_data is not None:
-        # time.sleep(0.2)  # 模拟耗时操作
-        pil_image = Image.fromarray(image_data[1])
+        pil_image = Image.fromarray(image_data)
         face_features = face_id.get_features_list([pil_image])
         text_list = database.recognize_faces(face_features)
         if text_list:
@@ -218,7 +218,7 @@ num=0
 sign=True
 
 # 统一的处理函数
-async def process(input_data, input_type):
+async def process(input_type, input_data):
     global PROCESS_POOL  # 引用全局进程池
     global arrived
     global name_list
@@ -228,26 +228,38 @@ async def process(input_data, input_type):
 
     if not name_list:
                 name_list=database.get_all_names()
-
-    if sign & num<len(name_list):
+    print(f"type of input_data: {type(input_data)}")
+    print(f"input_data:{input_data}")
+    print(f"type of input_tyoe: {type(input_type)}")
+    print(f"input_type: {input_type}")
+    print(f"arrived: {arrived}")
+    if sign and num<len(name_list):
         audio_html = await async_call_name(name_list[num])
         sign=False
     else:
         audio_html = ""
 
     # 提交任务到进程池
-    if input_type == "audio":
-        voice_id.add_chunk(input_data)
+    if input_type == "aud_stream":
+        print(f"size of input_data[1]: {input_data[1].shape}")
+        voice_id.add_chunk((input_data[0],input_data[1].T))
+        print(f"voice_id.is_round_end: {voice_id.is_round_end()}")
         if voice_id.is_round_end():
             sign=True
+            num+=1
             if audio_task is None or audio_task.done():
                 audio_task = asyncio.create_task(run_audio_task(input_data))
-            await audio_task
-    elif input_type == "image":
-        video_arrived = await asyncio.get_event_loop().run_in_executor(
-                PROCESS_POOL, process_image, input_data
-            )
-        arrived.add(video_arrived)
+                result_audio = await audio_task
+                arrived.update(result_audio)
+                print(f"Audio task result: {result_audio}")
+
+    elif input_type == "img_stream":
+        video_arrived = asyncio.create_task(run_image_task(input_data))
+        result = await video_arrived
+        arrived.update(result)
+        # print(f"Video task result: {result}")
+
+    print(f"audio_arrived: {arrived}")
 
     if audio_html:
         yield f"arrived: {arrived - {None}}\n", audio_html
@@ -257,10 +269,13 @@ async def process(input_data, input_type):
 async def run_audio_task(input_data):
     global PROCESS_POOL
     global arrived
-    audio_arrived = await asyncio.get_event_loop().run_in_executor(
-        PROCESS_POOL, process_audio, input_data
-    )
+    audio_arrived = await asyncio.to_thread(process_audio, input_data)
     arrived.add(audio_arrived)
+
+async def run_image_task(input_data):
+    global PROCESS_POOL
+    video_arrived = await asyncio.to_thread(process_image, input_data)
+    return video_arrived
 
 #这里将控制移到最后，方便与主函数进行交互，并添加了实时检测的逻辑
 
@@ -295,8 +310,8 @@ with gr.Blocks(fill_height=True) as demo:
     with gr.Tab("视频检测：实时检测版"):
         with gr.Column():
             with gr.Row():
-                audio_stream = gr.Audio(sources=["microphone"], type="numpy", label="请打开摄像头")
-                image_stream = gr.Image(sources=["webcam"], type="numpy", label="请打开麦克风")
+                audio_stream = gr.Audio(sources=["microphone"], type="numpy", label="请打开麦克风")
+                image_stream = gr.Image(sources=["webcam"], type="numpy", label="请打开摄像头")
             stream_text_output = gr.Textbox(label="检测结果")
             stream_html_output = gr.HTML(label="点名")
 
@@ -305,12 +320,13 @@ with gr.Blocks(fill_height=True) as demo:
     check_local_btn.click(waiting_local,inputs=None,outputs=wait_local).then(check_local, inputs=input_check, outputs=[wait_local,output_check_local_true, output_check_local_false, check_local_btn])
     audio_stream.stream(process, 
                         inputs=[gr.State("aud_stream"), audio_stream],
-                        outputs=[stream_text_output,stream_html_output], time_limit=3, stream_every=0.3)
+                        outputs=[stream_text_output,stream_html_output], time_limit=10, stream_every=0.3)
     image_stream.stream(process, 
                         inputs=[gr.State("img_stream"), image_stream],
-                        outputs=[stream_text_output,stream_html_output], time_limit=0.001, stream_every=0.001)
+                        outputs=[stream_text_output,stream_html_output], time_limit=10, stream_every=0.5)
 
-if __name__ == '__main__':
+if __name__=="__main__":
+    # 全局进程池
     PROCESS_POOL = multiprocessing.Pool(processes=2)  # 设置进程池的大小，例如 2 个进程
     demo.launch()
 
