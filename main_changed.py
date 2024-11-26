@@ -251,7 +251,6 @@ with gr.Blocks(fill_height=True) as demo:
     
     
     begin_check_btn.click(handle_inputs, inputs=start_signal, outputs=play_audio)
-    play_audio.stop(handle_inputs, inputs=play_done, outputs=None)
     play_audio.stop(audio_done, inputs=play_done, outputs=play_state)
     play_audio.play(audio_done, inputs=play_state, outputs=play_state)#这里的假定与下相同
     #True代表已经播完音频可以开始流式了
