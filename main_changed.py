@@ -261,7 +261,7 @@ with gr.Blocks(fill_height=True) as demo:
                         outputs=[stream_output, play_audio], time_limit=3, stream_every=0.3)  #设想的是如果play_audio为空则维持流式，否则播放音频
         image_stream.stream(handle_inputs, 
                         inputs=[gr.State("img_stream"), image_stream],
-                        outputs=[stream_output], time_limit=0.001, stream_every=0.001)
+                        outputs=[stream_output, play_audio], time_limit=0.001, stream_every=0.001)
     #play_state.change(handle_inputs, inputs=[play_signal, play_state], outputs=play_audio)#这里需要主函数判断一下play_state是否为"check_done"，如果是，则返回音频，否则返回空值，但不知道空值会发生什么
     
     
