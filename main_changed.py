@@ -168,6 +168,12 @@ def handle_inputs(mode: str, video_file:str =None,
             raise ValueError("Invalid mode! Please provide a valid mode.")
         
 
+def audio_done(txt):
+    if txt == "done":
+        return True
+    elif txt == "True":
+        return False
+
 #这里将控制移到最后，方便与主函数进行交互，并添加了实时检测的逻辑
 
 with gr.Blocks(fill_height=True) as demo:
@@ -198,6 +204,35 @@ with gr.Blocks(fill_height=True) as demo:
             output_check_local_true = gr.Textbox(label="检测结果：到教室的人", visible=False)
             output_check_local_false = gr.Textbox(label="检测结果：缺勤的人", visible=False)
             
+    # with gr.Tab("视频检测：实时检测版"):
+    #     with gr.Column():
+    #         with gr.Row():
+    #             audio_stream = gr.Audio(sources=["microphone"], type="numpy", label="请打开摄像头")
+    #             image_stream = gr.Image(sources=["webcam"], type="numpy", label="请打开麦克风")
+    #         begin_check_btn = gr.Button("开始检测")
+    #         stream_output = gr.Textbox(label="检测结果")
+    #         play_signal = gr.State("start_check")# 不变的开始播放状态
+    #         play_done = gr.State("done")# 不变的播放完成状态
+    #         play_state = gr.State("empty")# 变化的调度状态
+    #         play_audio = gr.Audio(label="播放学生名")
+
+    # sample_btn.click(sample, inputs=[img,aud,name], outputs=output_sample)
+    # begin_btn.click(train, inputs=None, outputs=train_status ) 
+    # check_local_btn.click(waiting_local,inputs=None,outputs=wait_local).then(check_local, inputs=input_check, outputs=[wait_local,output_check_local_true, output_check_local_false, check_local_btn])
+    
+    
+    # begin_check_btn.click(handle_inputs, inputs=play_signal, outputs=play_audio)
+    # play_audio.stop(handle_inputs, inputs=play_done, outputs=play_state)
+    # if play_state.value == "begin_check":
+    #     audio_stream.stream(handle_inputs, 
+    #                     inputs=[gr.State("aud_stream"), audio_stream],
+    #                     outputs=[stream_output, play_state], time_limit=3, stream_every=0.3)
+    #     image_stream.stream(handle_inputs, 
+    #                     inputs=[gr.State("img_stream"), image_stream],
+    #                     outputs=[stream_output, play_state], time_limit=0.001, stream_every=0.001)
+    # play_state.change(handle_inputs, inputs=[play_signal, play_state], outputs=play_audio)#这里需要主函数判断一下play_state是否为"check_done"，如果是，则返回音频，否则返回空值，但不知道空值会发生什么
+    
+    
     with gr.Tab("视频检测：实时检测版"):
         with gr.Column():
             with gr.Row():
@@ -205,9 +240,9 @@ with gr.Blocks(fill_height=True) as demo:
                 image_stream = gr.Image(sources=["webcam"], type="numpy", label="请打开麦克风")
             begin_check_btn = gr.Button("开始检测")
             stream_output = gr.Textbox(label="检测结果")
-            play_signal = gr.State("play")# 不变的开始播放状态
+            start_signal = gr.State("start_check")# 不变的开始播放状态
             play_done = gr.State("done")# 不变的播放完成状态
-            play_state = gr.State("empty")# 变化的调度状态
+            play_state = gr.State("False")# 变化的调度状态
             play_audio = gr.Audio(label="播放学生名")
 
     sample_btn.click(sample, inputs=[img,aud,name], outputs=output_sample)
@@ -215,18 +250,18 @@ with gr.Blocks(fill_height=True) as demo:
     check_local_btn.click(waiting_local,inputs=None,outputs=wait_local).then(check_local, inputs=input_check, outputs=[wait_local,output_check_local_true, output_check_local_false, check_local_btn])
     
     
-    begin_check_btn.click(handle_inputs, inputs=play_signal, outputs=play_audio)
-    play_audio.stop(handle_inputs, inputs=play_done, outputs=play_state)
-    if play_state.value == "begin_check":
+    begin_check_btn.click(handle_inputs, inputs=start_signal, outputs=play_audio)
+    play_audio.stop(audio_done, inputs=play_done, outputs=play_state)
+    play_audio.play(audio_done, inputs=play_state, outputs=play_state)#这里的假定与下相同
+    #True代表已经播完音频可以开始流式了
+    if play_state.value == "True":
         audio_stream.stream(handle_inputs, 
                         inputs=[gr.State("aud_stream"), audio_stream],
-                        outputs=[stream_output, play_state], time_limit=3, stream_every=0.3)
+                        outputs=[stream_output, play_audio], time_limit=3, stream_every=0.3)  #设想的是如果play_audio为空则维持流式，否则播放音频
         image_stream.stream(handle_inputs, 
                         inputs=[gr.State("img_stream"), image_stream],
-                        outputs=[stream_output, play_state], time_limit=0.001, stream_every=0.001)
-    play_state.change(handle_inputs, inputs=[play_signal, play_state], outputs=play_audio)#这里需要主函数判断一下play_state是否为"check_done"，如果是，则返回音频，否则返回空值，但不知道空值会发生什么
-    
-        
+                        outputs=[stream_output, play_audio], time_limit=0.001, stream_every=0.001)
+    #play_state.change(handle_inputs, inputs=[play_signal, play_state], outputs=play_audio)#这里需要主函数判断一下play_state是否为"check_done"，如果是，则返回音频，否则返回空值，但不知道空值会发生什么
     
     
     
@@ -235,5 +270,13 @@ with gr.Blocks(fill_height=True) as demo:
 #当音频播放完之后，我将播放完的信号play_done传给主函数，主函数返回我play_state="begin_check"
 #我检测到begin_check后将音频和视频流传给主函数进行人名检测，返回stream_output与新的play_state="check_done"
 #我检测play_state的变化，一旦改变，就传递播放信号play_signal给主函数，主函数传给我音频
+
+
+
+
+#主函数先生成一段音频，当我按下按钮，即检测btn.click, 我将一个状态“开始播放”主函数，主函数返回给我音频输出
+#我检测音频是否播完，audio.stop(),我将状态“播放完了”传给主函数，主函数告诉我状态“开始检测”——这里想让我造一个函数，然后我启动流式
+#我打开流式音频主函数操作，完了给我一个音频，在来一个“开始播放”状态，我播放音频
+#当主函数检测到人名，返回给我人名字典与一个状态“检测完毕”，我用if语句，输出人名，并将该状态改变
 
 demo.launch()
