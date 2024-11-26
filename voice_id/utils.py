@@ -13,17 +13,17 @@ def cancel_channel(samples: torch.Tensor|np.ndarray) -> torch.Tensor|np.ndarray:
     if isinstance(samples, torch.Tensor):
         match samples.ndim:
             case 1:
-                return samples
+                return samples # (samples, )
             case 2:
-                return samples.mean(dim=0, keepdim=False)
+                return samples.mean(dim=0, keepdim=False) # (channels, samples) -> (samples, )
             case _:
                 raise ValueError(f"Invalid samples shape: {samples.shape}")
     elif isinstance(samples, np.ndarray):
         match samples.ndim:
             case 1:
-                return samples
+                return samples # (samples, )
             case 2:
-                return samples.mean(axis=0, keepdims=False)
+                return samples.mean(axis=0, keepdims=False) # (channels, samples) -> (samples, )
             case _:
                 raise ValueError(f"Invalid samples shape: {samples.shape}")
     else:
@@ -40,9 +40,9 @@ def add_channel(samples: torch.Tensor|np.ndarray) -> torch.Tensor|np.ndarray:
     if isinstance(samples, torch.Tensor):
         match samples.ndim:
             case 1:
-                return samples.unsqueeze(0)
+                return samples.unsqueeze(0) # (samples, ) -> (1, samples)
             case 2:
-                return samples.mean(dim=0, keepdim=True)
+                return samples.mean(dim=0, keepdim=True) # (channels, samples) -> (1, samples)
             case _:
                 raise ValueError(f"Invalid samples shape: {samples.shape}")
     elif isinstance(samples, np.ndarray):
@@ -50,7 +50,7 @@ def add_channel(samples: torch.Tensor|np.ndarray) -> torch.Tensor|np.ndarray:
             case 1:
                 return samples[np.newaxis, :]
             case 2:
-                return samples.mean(axis=0, keepdims=True)
+                return samples.mean(axis=0, keepdims=True) # (channels, samples) -> (1, samples)
             case _:
                 raise ValueError(f"Invalid samples shape: {samples.shape}")
     else:
@@ -70,6 +70,7 @@ def resample(samples: torch.Tensor|np.ndarray, src_rate: int, tgt_rate: int) -> 
         return samples
     
     is_src_np = isinstance(samples, np.ndarray)
+
     # all to tensor
     if not isinstance(samples, torch.Tensor):
         samples = torch.tensor(samples)

@@ -7,6 +7,7 @@ import numpy as np
 import torchaudio
 from config import Config
 from .utils import resample, cancel_channel, add_channel, to_numpy, to_tensor
+from scipy.signal import hilbert
 
 Audio: TypeAlias = tuple[int, np.ndarray|torch.Tensor]
 
@@ -34,13 +35,16 @@ class VoiceID:
         # Initialize the record
         self.record: np.ndarray = np.array([]) # (channels, samples)
         self.round_cache: np.ndarray = np.array([]) # (channels, samples)
+        self.last_is_end = False
         
     def extract_round_features(self) -> Tensor:
         '''
         Returns:
             Tensor: The extracted features, (1, emb_dim)
         '''
-        return self.extract_label_features((DEFAULT_RECORD_RATE, self.round_cache))
+        features = self.extract_label_features((DEFAULT_RECORD_RATE, self.round_cache))
+        self.round_cache = np.array([])
+        return features
     
     def extract_label_features(self, label_audio: Audio) -> Tensor:
         '''
@@ -53,9 +57,7 @@ class VoiceID:
         wave = to_tensor(wave)
         wave = resample(wave, rate, ECAPA_SAMPLING_RATE)
         wave = add_channel(wave) # (1, samples)
-        print(wave.shape)
         features = self.ecapa.encode_batch(wave).squeeze()
-        print(features.shape)
         return features
     
     def is_round_end(self) -> bool:
@@ -65,15 +67,24 @@ class VoiceID:
             bool: True if the round has ended, False otherwise.
         """
         if len(self.round_cache)//DEFAULT_RECORD_RATE >= MAX_ROUND_SECONDS:
-            return True
+           return True
         
-        round_record = to_tensor(self.round_cache)
-        round_record = resample(round_record, DEFAULT_RECORD_RATE, SILERO_SAMPLING_RATE)
-        timestamps = self.get_speech_timestamps(round_record, 
-                        self.silero, 
-                        sampling_rate=SILERO_SAMPLING_RATE,
-                        threshold=1)
-        return len(timestamps) > 0
+        is_end = False
+        envelope = np.abs(hilbert(self.round_cache))
+        this_is_end = (np.max(envelope)> 0.3)
+        is_end = self.last_is_end and this_is_end
+        self.last_is_end = this_is_end
+                    
+        # round_record = to_tensor(self.round_cache)
+        # round_record = round_record.to(dtype=torch.float32)
+        # round_record = resample(round_record, DEFAULT_RECORD_RATE, SILERO_SAMPLING_RATE)
+        # timestamps = self.get_speech_timestamps(round_record, 
+        #                 self.silero, 
+        #                 sampling_rate=SILERO_SAMPLING_RATE,
+        #                 threshold=0.1)
+        # is_end = len(timestamps) > 0
+        
+        return is_end
     
     def add_chunk(self, chunk: Audio) -> None:
         '''
