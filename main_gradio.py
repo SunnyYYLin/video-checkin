@@ -89,25 +89,14 @@ def handle_inputs(mode: str, video_file:str =None,
 
             print("正在存储学生特征...")
             # 将样本的人脸特征、声音特征和标签存储到数据库
-            database.store_feature(tag, face_feature, audio_feature)
+            database.add(tag, face_feature, audio_feature)
+            database.save()
             print("学生特征存储完成！")
             return {"result": True}
 
         case "train":
-            num_epochs = 10
-
-            print("正在训练脸部识别孪生网络模型...")
-            database.train_face_siamese_model(num_epochs)
-            print("语音识别模型训练完成！")
-
-            print("正在训练声音识别孪生网络模型...")
-            database.train_voice_siamese_model(num_epochs)
-            print("声音识别模型训练完成！")    
-            print("正在备份可识别同学信息...")
-            database.save_feature_db(filename="feature_db.pt")
-            print("可识别同学信息备份完成！")
-
-            #return ["Sample input successfully received"]
+            database.train_both(num_epochs=32, batch_size=16)
+            database.save()
             return {"result": True}
         
         case "check":
@@ -134,15 +123,12 @@ def handle_inputs(mode: str, video_file:str =None,
             print("正在识别人脸和声音...")
             text_list = database.recognize_faces(face_features)
             print("人脸识别完成！")
-            for audio_feature in audio_features:
-                result = database.recognize_voice(audio_feature)
-                # 将识别结果添加到文本列表
-                if result not in text_list:
-                    text_list.append(result)
+            text_list += database.recognize_voices(audio_features)
+            text_list = list(set(text_list))
 
             dict = {}
             if not name_list:
-                name_list=database.get_all_names()
+                name_list=database.name_list
 
             # 检查识别结果是否在名单中
             for name in name_list:
@@ -272,7 +258,7 @@ if __name__=="__main__":
     face_id_tasks: List[asyncio.Task] = []
 
     if not stream_name_list:
-        stream_name_list=database.get_all_names()
+        stream_name_list=database.name_list
 
     next_call = None
 #这里将控制移到最后，方便与主函数进行交互，并添加了实时检测的逻辑

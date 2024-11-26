@@ -39,11 +39,20 @@ class Database:
         数据库类，用于存储学生的面部特征和语音特征，并提供训练和识别功能。
         """
         self.students: dict[str, Student] = {}  # 学生特征数据库
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
         # Load features from checkpoints
         if Path("checkpoints/students.pt").exists():
             self.students = torch.load("checkpoints/students.pt", weights_only=False)
             print("存在students.pt：成功加载学生特征数据库！")
+            
+        for student in self.students.values():
+            student.face_features = [feature.to(self.device) for feature in student.face_features]
+            student.voice_features = [feature.to(self.device) for feature in student.voice_features]
+            if student.face_prototype is not None:
+                student.face_prototype = student.face_prototype.to(self.device)
+            if student.voice_prototype is not None:
+                student.voice_prototype = student.voice_prototype.to(self.device)
 
         # Initialize siamese models
         self.face_siamese_model = SiameseNetwork(input_dim=512, output_dim=64)  # 面部特征孪生网络模型
@@ -54,6 +63,11 @@ class Database:
         if Path("checkpoints/voice_siamese_model.pt").exists():
             self.voice_siamese_model.load_state_dict(torch.load("checkpoints/voice_siamese_model.pt", weights_only=True))
             print("存在voice_siamese_model.pt：成功加载语音识别模型权重！可以不训练，直接进行语音识别")
+        self.face_siamese_model.to(self.device)
+        self.voice_siamese_model.to(self.device)
+        
+        self.face_threshold = self.auto_threshold(attr="face_features")
+        self.voice_threshold = self.auto_threshold(attr="voice_features")
     
     def add(self, name: str, face_feature_vector: torch.Tensor, voice_feature_vector: torch.Tensor) -> None:
         """
@@ -79,9 +93,18 @@ class Database:
         
     @property
     def name_list(self) -> list[str]:
-        return list(set([student.name for student in self.students]))
+        return list(self.students.keys())
+    
+    def train_both(self, num_epochs: int = 32, batch_size=16) -> None:
+        """
+        训练两个孪生网络模型。
+        
+        :param num_epochs: 训练的轮数。
+        """
+        self.train_face_siamese_model(num_epochs, batch_size)
+        self.train_voice_siamese_model(num_epochs, batch_size)
 
-    def train_face_siamese_model(self, num_epochs: int = 32, batch_size=8) -> None:
+    def train_face_siamese_model(self, num_epochs: int = 32, batch_size=16) -> None:
         """
         训练面部特征识别的孪生网络模型。
         
@@ -91,15 +114,16 @@ class Database:
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
         criterion = ContrastiveLoss()
         print("开始训练面部识别模型...")
-        train(self.face_siamese_model, dataloader, criterion, num_epochs)
+        train(self.face_siamese_model, dataloader, criterion, num_epochs, self.device)
         print("面部识别模型训练完成！")
         
         # get face prototype
         for student in self.students.values():
             features = torch.stack(student.face_features)
             student.face_prototype = self.face_siamese_model.forward_one(features).mean(dim=0)
+        self.face_threshold = self.auto_threshold(attr="face_features")
 
-    def train_voice_siamese_model(self, num_epochs: int = 10, batch_size=8) -> None:
+    def train_voice_siamese_model(self, num_epochs: int = 32, batch_size=16) -> None:
         """
         训练语音特征识别的孪生网络模型。
         
@@ -109,13 +133,14 @@ class Database:
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
         criterion = ContrastiveLoss()
         print("开始训练语音识别模型...")
-        train(self.voice_siamese_model, dataloader, criterion, num_epochs)
+        train(self.voice_siamese_model, dataloader, criterion, num_epochs, self.device)
         print("语音识别模型训练完成！")
         
         # get voice prototype
         for student in self.students.values():
             features = torch.stack(student.voice_features)
             student.voice_prototype = self.voice_siamese_model.forward_one(features).mean(dim=0)
+        self.voice_threshold = self.auto_threshold(attr="voice_features")
 
     @torch.no_grad()
     def recognize_face(self, face_feature_vector: torch.Tensor, threshold: float=None) -> str|None:
@@ -125,8 +150,7 @@ class Database:
         :param face_feature_vector: 输入的面部特征向量。
         :return: 识别到的姓名。
         """
-        if threshold is None:
-            threshold = self.auto_threshold(attr="face_features")
+        threshold = self.face_threshold if threshold is None else threshold
     
         # 提取所有 prototype 和对应的姓名
         prototypes = []
@@ -138,19 +162,22 @@ class Database:
         
         if not prototypes:
             return None
+        
+        face_feature_vector = face_feature_vector.unsqueeze(0).to(self.device)
+        face_feature_vector = self.face_siamese_model.forward_one(face_feature_vector)
 
         # 将所有 prototype 拼接成矩阵
         prototype_matrix = torch.stack(prototypes)  # Shape: (N, D)
         
         # 计算输入向量与所有 prototype 的余弦相似度
-        similarities = F.cosine_similarity(face_feature_vector.unsqueeze(0), prototype_matrix)  # Shape: (N,)
+        similarities = F.cosine_similarity(face_feature_vector, prototype_matrix)  # Shape: (N,)
 
         # 找到相似度最高的 prototype
-        max_similarity, idx = torch.max(similarities, dim=0)
+        max_similarity, idx = torch.max(similarities, dim=0) # Shape: (1,)
         print(f"相似度分别为：{similarities.tolist()}")
 
         # 检查是否超过阈值
-        return names[idx] if max_similarity >= threshold else None
+        return names[idx] if max_similarity < threshold else None
     
     @torch.no_grad()
     def recognize_faces(self, face_features: list[torch.Tensor], threshold: float=None) -> list[str]:
@@ -159,8 +186,10 @@ class Database:
         :param face_features: 面部特征向量列表
         :return: 匹配的学生姓名列表
         """
-        if threshold is None:
-            threshold = self.auto_threshold(attr="face_features")
+        if len(face_features) == 0:
+            return []
+        
+        threshold = self.face_threshold if threshold is None else threshold
         
         # 提取所有 prototype 和对应的姓名
         prototypes = []
@@ -174,23 +203,27 @@ class Database:
             return []
 
         # 将所有 prototype 拼接成矩阵
-        prototype_matrix = torch.stack(prototypes)  # Shape: (N, D)
+        prototype_matrix = torch.stack(prototypes) # (num_prototypes, out_dim)
         
         # 将输入向量拼接成矩阵
-        face_feature_matrix = torch.stack(face_features)  # Shape: (M, D)
+        face_feature_matrix = torch.stack(face_features)  # (batch_size, in_dim)
+        face_feature_matrix = face_feature_matrix.to(self.device)
+        face_feature_matrix = self.face_siamese_model.forward_one(face_feature_matrix) # (batch_size, out_dim)
         
-        # 计算所有输入向量与所有 prototype 的余弦相似度
+        # 计算所有输入向量与所有 prototype 的余弦相似度 (batch_size, num_prototypes)
         similarities = F.cosine_similarity(face_feature_matrix.unsqueeze(1), prototype_matrix.unsqueeze(0), dim=2)  # Shape: (M, N)
         
         # 找到每个输入向量的最高相似度及对应的索引
-        max_similarities, indices = torch.max(similarities, dim=1)  # Shape: (M,)
+        max_similarities, indices = torch.max(similarities, dim=1)  # (batch_size,)
         print(f"相似度分别为：{similarities}")
 
         # 根据阈值判断并返回对应的姓名
-        recognized_names = [names[idx] if max_similarity >= threshold else None
+        recognized_names = [names[idx] if max_similarity < threshold else None
                             for max_similarity, idx in zip(max_similarities, indices)]
+        recognized_names = set(recognized_names)
+        recognized_names.remove(None)
         
-        return list(set(recognized_names).remove(None))
+        return list(recognized_names)
 
     @torch.no_grad()
     def recognize_voice(self, voice_feature_vector: torch.Tensor, threshold: float=None) -> str|None:
@@ -200,8 +233,7 @@ class Database:
         :param voice_feature_vector: 输入的语音特征向量。
         :return: 识别到的姓名。
         """
-        if threshold is None:
-            threshold = self.auto_threshold(attr="voice_features")
+        threshold = self.voice_threshold if threshold is None else threshold
         
         # 提取所有 prototype 和对应的姓名
         prototypes = []
@@ -214,20 +246,68 @@ class Database:
         if not prototypes:
             return None
 
+        voice_feature_vector = voice_feature_vector.unsqueeze(0).to(self.device)
+        voice_feature_vector = self.voice_siamese_model.forward_one(voice_feature_vector) # Shape: (1, D)
+        
         # 将所有 prototype 拼接成矩阵
         prototype_matrix = torch.stack(prototypes)  # Shape: (N, D)
         
         # 计算输入向量与所有 prototype 的余弦相似度
-        similarities = F.cosine_similarity(voice_feature_vector.unsqueeze(0), prototype_matrix)  # Shape: (N,)
+        similarities = F.cosine_similarity(voice_feature_vector, prototype_matrix)  # Shape: (N,)
         
         # 找到相似度最高的 prototype
-        max_similarity, idx = torch.max(similarities, dim=0)
+        max_similarity, idx = torch.max(similarities, dim=0) # Shape: (1,)
         print(f"相似度分别为：{similarities.tolist()}")
         
-        # 检查是否超过阈值
-        return names[idx] if max_similarity >= threshold else None
+        return names[idx] if max_similarity < threshold else None
     
-    @lru_cache(maxsize=8)
+    @torch.no_grad()
+    def recognize_voices(self, voice_features: torch.Tensor, threshold: float=None) -> list[str]:
+        """
+        批量处理语音特征向量列表，返回所有匹配的学生姓名。
+        
+        :param voice_features: 语音特征向量列表。
+        :return: 匹配的学生姓名列表。
+        """
+        if len(voice_features) == 0:
+            return []
+        
+        threshold = self.voice_threshold if threshold is None else threshold
+        
+        # 提取所有 prototype 和对应的姓名
+        prototypes = []
+        names = []
+        for name, student in self.students.items():
+            if student.voice_prototype is not None:
+                prototypes.append(student.voice_prototype)
+                names.append(name)
+        
+        if not prototypes:
+            return []
+
+        # 将所有 prototype 拼接成矩阵
+        prototype_matrix = torch.stack(prototypes) # (num_prototypes, out_dim)
+        
+        # 将输入向量拼接成矩阵
+        voice_features = voice_features.to(self.device) # (batch_size, in_dim)
+        voice_features = self.voice_siamese_model.forward_one(voice_features) # (batch_size, out_dim)
+        
+        # 计算所有输入向量与所有 prototype 的余弦相似度 (batch_size, num_prototypes)
+        similarities = F.cosine_similarity(voice_features.unsqueeze(1), prototype_matrix.unsqueeze(0), dim=2)
+        
+        # 找到每个输入向量的最高相似度及对应的索引
+        max_similarities, indices = torch.max(similarities, dim=1) # (batch_size,)
+        print(f"相似度分别为：{similarities}")
+        
+        # 根据阈值判断并返回对应的姓名
+        recognized_names = [names[idx] if max_similarity < threshold else None
+                            for max_similarity, idx in zip(max_similarities, indices)]
+        recognized_names = set(recognized_names)
+        recognized_names.remove(None)
+        
+        return list(recognized_names)
+    
+    @torch.no_grad()
     def auto_threshold(self, attr: str, alpha=0.3) -> float:
         """
         自动调整阈值，结合类内和类间距离动态计算。
@@ -242,18 +322,8 @@ class Database:
         prototypes = {name: getattr(student, f"{attr[:-9]}_prototype") for name, student in self.students.items()}
         
         # 确保所有学生都有 prototype
-        if not all(prototypes.values()):
+        if not all(proto is not None for proto in prototypes.values()):
             raise ValueError(f"学生的 {attr} 原型尚未计算，请确保模型已训练并调用相应的训练方法！")
-        
-        # 计算类内距离
-        intra_distances = []
-        for student in self.students.values():
-            features = getattr(student, attr)
-            prototype = getattr(student, f"{attr[:-9]}_prototype")
-            distances = F.cosine_similarity(torch.stack(features), prototype.unsqueeze(0))  # 余弦相似度
-            intra_distances.extend(distances.tolist())
-        
-        avg_intra_distance = sum(intra_distances) / len(intra_distances)
 
         # 计算类间距离
         inter_distances = []
@@ -264,7 +334,7 @@ class Database:
         max_inter_distance = max(inter_distances)
 
         # 动态计算阈值
-        threshold = alpha * avg_intra_distance + (1 - alpha) * max_inter_distance
+        threshold = alpha * max_inter_distance
         print(f"计算出的 {attr} 阈值: {threshold:.4f}")
         return threshold
         

@@ -164,9 +164,11 @@ cython_debug/
 data/
 pretrained_models/
 audio/
+checkpoints/
 cut.py
 *.mp3
 *.mp4
 *.m4a
 *.wav
+*.pt
 test.py

@@ -1,1 +1,1 @@
-from .database_module6 import Database
+from .database import Database, Student

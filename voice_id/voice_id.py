@@ -135,5 +135,5 @@ class VoiceID:
         if len(lengths)==0:
             return []
         slices = pad_sequence(slices, batch_first=True) # (batch, samples)
-        return self.ecapa.encode_batch(slices, lengths) # (batch, channels, emb_dim)
+        return self.ecapa.encode_batch(slices, lengths).squeeze(1) # (batch, channels, emb_dim)
     

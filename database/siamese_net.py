@@ -12,7 +12,6 @@ class SiameseNetwork(nn.Module):
         super(SiameseNetwork, self).__init__()
         hidden_dim = (input_dim + output_dim) // 2
         self.fc1 = nn.Linear(input_dim, hidden_dim)  # 第一层全连接层
-        self.bn1 = nn.BatchNorm1d(hidden_dim)
         self.dropout = nn.Dropout(dropout)                 # Dropout 层
         self.fc2 = nn.Linear(hidden_dim, output_dim)       # 第二层全连接层
 
@@ -24,7 +23,6 @@ class SiameseNetwork(nn.Module):
         :return: 处理后的输出张量（嵌入特征）。
         """
         x = F.relu(self.fc1(x))  # 第一个全连接层 + ReLU 激活
-        x = self.bn1(x)          # BatchNorm 层
         x = self.dropout(x)       # Dropout 层
         x = self.fc2(x)          # 第二个全连接层
         x = F.normalize(x, p=2, dim=1)  # L2 归一化
@@ -69,7 +67,8 @@ class ContrastiveLoss(nn.Module):
 def train(model: nn.Module,
           train_loader: DataLoader, 
           criterion: nn.Module = ContrastiveLoss(),
-          num_epochs: int = 32) -> None:
+          num_epochs: int = 32,
+          device=torch.device("cuda" if torch.cuda.is_available() else "cpu")) -> None:
     """
     训练孪生网络模型。
     
@@ -84,6 +83,7 @@ def train(model: nn.Module,
         running_loss = 0.0
         for i, data in tqdm(enumerate(train_loader), desc=f"Epoch {epoch + 1}"):
             inputs1, inputs2, labels = data
+            inputs1, inputs2, labels = inputs1.to(device), inputs2.to(device), labels.to(device)
             optimizer.zero_grad()
             outputs1, outputs2 = model(inputs1, inputs2)
             loss = criterion(outputs1, outputs2, labels)

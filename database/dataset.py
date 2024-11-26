@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from itertools import combinations
 import torch
 from torch.utils.data import Dataset
 
@@ -33,6 +34,8 @@ class FeaturePairDataset(Dataset):
         :param feature_entries: 存储所有学生面部或语音特征
         """
         self.feature_entries = feature_entries
+        self.pairs: list[tuple[int, int]] = list(combinations(range(len(feature_entries)), 2))\
+            + [(i, i) for i in range(len(feature_entries))]
 
     def __len__(self) -> int:
         """
@@ -40,7 +43,7 @@ class FeaturePairDataset(Dataset):
         
         :return: 数据集中配对的数量。
         """
-        return len(self.feature_entries) * (len(self.feature_entries) + 1) // 2
+        return len(self.pairs)
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, int]:
         """
@@ -50,11 +53,7 @@ class FeaturePairDataset(Dataset):
         :return: 包含两个输入特征向量和对应标签的元组。
         """
         assert 0 <= idx < len(self), "Index out of range"
-        
-        # 通过字典序公式动态解算 (idx1, idx2)
-        idx1 = int((1 + (1 + 8 * idx)**0.5) // 2)
-        idx2 = idx - idx1 * (idx1 - 1) // 2 + idx1
-        
+        idx1, idx2 = self.pairs[idx]
         feature1 = self.feature_entries[idx1].feature
         feature2 = self.feature_entries[idx2].feature
         label = int(self.feature_entries[idx1].name == self.feature_entries[idx2].name)
