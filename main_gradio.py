@@ -94,7 +94,7 @@ def handle_inputs(mode: str, video_file:str =None,
             return {"result": True}
 
         case "train":
-            database.train_both(num_epochs=32, batch_size=16)
+            database.train_both(num_epochs=10, batch_size=16)
             database.save()
             return {"result": True}
         
@@ -119,10 +119,12 @@ def handle_inputs(mode: str, video_file:str =None,
             print("声音特征提取完成！")
 
             #识别人脸和声音
-            print("正在识别人脸和声音...")
+            print("正在识别人脸...")
             text_list = database.recognize_faces(face_features)
             print("人脸识别完成！")
+            print("正在识别声音...")
             text_list += database.recognize_voices(audio_features)
+            print("声音识别完成！")
             text_list = list(set(text_list))
 
             dict = {}

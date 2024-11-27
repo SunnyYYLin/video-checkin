@@ -4,7 +4,7 @@ from PIL import Image
 import numpy as np
 
 class FaceID:
-    def __init__(self, threshold=0.4, count_threshold = 12, width_threshold = 20, height_threshold =20, device='cuda'):
+    def __init__(self, threshold=0.4, count_threshold = 2, width_threshold = 20, height_threshold =20, device='cuda'):
         # 初始化模型，设置相似度阈值
         self.device = torch.device(device)
         self.model = InceptionResnetV1(pretrained='vggface2').to(self.device).eval()

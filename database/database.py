@@ -98,7 +98,7 @@ class Database:
     def name_list(self) -> list[str]:
         return list(self.students.keys())
     
-    def train_both(self, num_epochs: int = 32, batch_size=16) -> None:
+    def train_both(self, num_epochs: int = 10, batch_size=16) -> None:
         """
         训练两个孪生网络模型。
         
@@ -178,11 +178,13 @@ class Database:
         similarities = F.cosine_similarity(face_feature_vector, prototype_matrix)  # Shape: (N,)
 
         # 找到相似度最高的 prototype
-        max_similarity, idx = torch.max(similarities, dim=0) # Shape: (1,)
-        print(f"相似度分别为：{similarities.tolist()}")
+        max_similarity, indices = torch.max(similarities, dim=0) # Shape: (1,)
+        print(f"横轴: {names}")
+        print(f"纵轴预测标签：{[names[idx] for idx in indices]}")
+        print(f"相似度分别为：{similarities}")
 
         # 检查是否超过阈值
-        return names[idx] if max_similarity < threshold else None
+        return names[indices] if max_similarity > threshold else None
     
     @torch.no_grad()
     def recognize_faces(self, face_features: list[torch.Tensor], threshold: float=None) -> list[str]:
@@ -220,13 +222,16 @@ class Database:
         
         # 找到每个输入向量的最高相似度及对应的索引
         max_similarities, indices = torch.max(similarities, dim=1)  # (batch_size,)
+        print(f"横轴: {names}")
+        print(f"纵轴预测标签：{[names[idx] for idx in indices]}")
         print(f"相似度分别为：{similarities}")
 
         # 根据阈值判断并返回对应的姓名
-        recognized_names = [names[idx] if max_similarity < threshold else None
+        recognized_names = [names[idx] if max_similarity > threshold else None
                             for max_similarity, idx in zip(max_similarities, indices)]
         recognized_names = set(recognized_names)
-        recognized_names.remove(None)
+        if None in recognized_names:
+            recognized_names.remove(None)
         
         return list(recognized_names)
 
@@ -264,10 +269,12 @@ class Database:
         similarities = F.cosine_similarity(voice_feature_vector, prototype_matrix)  # Shape: (N,)
         
         # 找到相似度最高的 prototype
-        max_similarity, idx = torch.max(similarities, dim=0) # Shape: (1,)
-        print(f"相似度分别为：{similarities.tolist()}")
+        max_similarity, indices = torch.max(similarities, dim=0) # Shape: (1,)
+        print(f"横轴: {names}")
+        print(f"纵轴预测标签：{[names[idx] for idx in indices]}")
+        print(f"相似度分别为：{similarities}")
         
-        return names[idx] if max_similarity < threshold else None
+        return names[indices] if max_similarity > threshold else None
     
     @torch.no_grad()
     def recognize_voices(self, voice_features: torch.Tensor, threshold: float=None) -> list[str]:
@@ -305,18 +312,21 @@ class Database:
         
         # 找到每个输入向量的最高相似度及对应的索引
         max_similarities, indices = torch.max(similarities, dim=1) # (batch_size,)
+        print(f"横轴: {names}")
+        print(f"纵轴预测标签：{[names[idx] for idx in indices]}")
         print(f"相似度分别为：{similarities}")
         
         # 根据阈值判断并返回对应的姓名
-        recognized_names = [names[idx] if max_similarity < threshold else None
+        recognized_names = [names[idx] if max_similarity > threshold else None
                             for max_similarity, idx in zip(max_similarities, indices)]
         recognized_names = set(recognized_names)
-        recognized_names.remove(None)
+        if None in recognized_names:
+            recognized_names.remove(None)
         
         return list(recognized_names)
     
     @torch.no_grad()
-    def auto_threshold(self, attr: str, alpha=0.3) -> float:
+    def auto_threshold(self, attr: str, alpha=0.7) -> float:
         """
         自动调整阈值，结合类内和类间距离动态计算。
         
@@ -332,16 +342,14 @@ class Database:
         
         assert len(prototypes) > 1, "Not enough prototypes for threshold calculation"
 
-        # 计算类间距离
-        inter_distances = []
+        # 计算类间相似度
+        inter_similarities = []
         for (name1, proto1), (name2, proto2) in combinations(prototypes.items(), 2):
             inter_distance = F.cosine_similarity(proto1.unsqueeze(0), proto2.unsqueeze(0)).item()
-            inter_distances.append(inter_distance)
+            inter_similarities.append(inter_distance)
         
-        max_inter_distance = max(inter_distances)
-
         # 动态计算阈值
-        threshold = alpha * max_inter_distance
+        threshold = min(inter_similarities) + alpha
         print(f"计算出的 {attr} 阈值: {threshold:.4f}")
         return threshold
         

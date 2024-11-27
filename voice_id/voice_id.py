@@ -135,9 +135,11 @@ class VoiceID:
         timestamps = self.get_speech_timestamps(wave, 
                         self.silero, 
                         sampling_rate=SILERO_SAMPLING_RATE,
-                        threshold=0.2, return_seconds=True)
+                        threshold=0.5, return_seconds=True)
         slices = [wave[:, int(stamp['start']*SILERO_SAMPLING_RATE):int(stamp['end']*SILERO_SAMPLING_RATE)]
                   for stamp in timestamps]
+        for i, slice in enumerate(slices):
+            torchaudio.save(f'audio/slice_{i}.wav', slice.cpu(), SILERO_SAMPLING_RATE)
         return slices
     
     def extract_clip_features(self, record: Audio) -> torch.Tensor:
