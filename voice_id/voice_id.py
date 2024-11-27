@@ -7,6 +7,9 @@ import numpy as np
 import torchaudio
 from config import Config
 from .utils import resample, cancel_channel, add_channel, to_numpy, to_tensor
+from scipy.signal import hilbert
+import time
+import matplotlib.pyplot as plt
 
 Audio: TypeAlias = tuple[int, np.ndarray|torch.Tensor]
 
@@ -34,13 +37,20 @@ class VoiceID:
         # Initialize the record
         self.record: np.ndarray = np.array([]) # (channels, samples)
         self.round_cache: np.ndarray = np.array([]) # (channels, samples)
+        self.last_round_cache: np.ndarray = np.array([]) # (channels, samples)
+        self.last_is_end = False
         
     def extract_round_features(self) -> Tensor:
         '''
         Returns:
             Tensor: The extracted features, (1, emb_dim)
         '''
-        return self.extract_label_features((DEFAULT_RECORD_RATE, self.round_cache))
+        if self.last_round_cache.size == 0:
+            return None
+        else:
+            features = self.extract_label_features((DEFAULT_RECORD_RATE, self.last_round_cache))
+            self.last_round_cache = np.array([])
+            return features
     
     def extract_label_features(self, label_audio: Audio) -> Tensor:
         '''
@@ -53,9 +63,7 @@ class VoiceID:
         wave = to_tensor(wave)
         wave = resample(wave, rate, ECAPA_SAMPLING_RATE)
         wave = add_channel(wave) # (1, samples)
-        print(wave.shape)
         features = self.ecapa.encode_batch(wave).squeeze()
-        print(features.shape)
         return features
     
     def is_round_end(self) -> bool:
@@ -65,15 +73,27 @@ class VoiceID:
             bool: True if the round has ended, False otherwise.
         """
         if len(self.round_cache)//DEFAULT_RECORD_RATE >= MAX_ROUND_SECONDS:
-            return True
+            is_end = True
+            self.last_is_end = False
+            self.last_round_cache = np.array([])
+        else:
+            envelope = np.abs(hilbert(self.round_cache))
+            this_is_end = (np.max(envelope)> 0.5)
+            is_end = self.last_is_end
+            self.last_is_end = (not self.last_is_end) and this_is_end
+            self.last_round_cache = self.round_cache.copy()
+            
+        if is_end:
+            print(f"检测到语音结束，当前长度: {self.round_cache.shape}")
+            self.round_cache = np.array([])
+            # import matplotlib.pyplot as plt
+            # plt.plot(envelope)
+            # plt.savefig(f'test/envelope_{time.time()}.png')
+            # plt.close()
+        else:
+            print(f"未检测到语音结束，当前长度: {self.round_cache.shape}")
         
-        round_record = to_tensor(self.round_cache)
-        round_record = resample(round_record, DEFAULT_RECORD_RATE, SILERO_SAMPLING_RATE)
-        timestamps = self.get_speech_timestamps(round_record, 
-                        self.silero, 
-                        sampling_rate=SILERO_SAMPLING_RATE,
-                        threshold=0.1)
-        return len(timestamps) > 0
+        return is_end
     
     def add_chunk(self, chunk: Audio) -> None:
         '''
@@ -115,9 +135,11 @@ class VoiceID:
         timestamps = self.get_speech_timestamps(wave, 
                         self.silero, 
                         sampling_rate=SILERO_SAMPLING_RATE,
-                        threshold=0.2, return_seconds=True)
+                        threshold=0.5, return_seconds=True)
         slices = [wave[:, int(stamp['start']*SILERO_SAMPLING_RATE):int(stamp['end']*SILERO_SAMPLING_RATE)]
                   for stamp in timestamps]
+        for i, slice in enumerate(slices):
+            torchaudio.save(f'audio/slice_{i}.wav', slice.cpu(), SILERO_SAMPLING_RATE)
         return slices
     
     def extract_clip_features(self, record: Audio) -> torch.Tensor:
@@ -135,5 +157,5 @@ class VoiceID:
         if len(lengths)==0:
             return []
         slices = pad_sequence(slices, batch_first=True) # (batch, samples)
-        return self.ecapa.encode_batch(slices, lengths) # (batch, channels, emb_dim)
+        return self.ecapa.encode_batch(slices, lengths).squeeze(1) # (batch, channels, emb_dim)
     

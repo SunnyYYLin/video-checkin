@@ -1,14 +1,13 @@
 from facenet_pytorch import InceptionResnetV1, MTCNN
-import cv2
 import torch
 from PIL import Image
 import numpy as np
 
 class FaceID:
-    def __init__(self, threshold=0.4, count_threshold = 12, width_threshold = 20, height_threshold =20, device='cuda'):
+    def __init__(self, threshold=0.4, count_threshold = 2, width_threshold = 20, height_threshold =20, device='cuda'):
         # 初始化模型，设置相似度阈值
         self.device = torch.device(device)
-        self.model = InceptionResnetV1(pretrained='vggface2').eval()
+        self.model = InceptionResnetV1(pretrained='vggface2').to(self.device).eval()
         self.threshold = threshold
         self.mtcnn = MTCNN(keep_all=True, device=self.device)
         self.positions = [] #用来记录各个人脸框的区域
@@ -31,12 +30,16 @@ class FaceID:
         参数:
             image: 包含人脸的PIL图像对象。
         返回:
-            特征向量列表，每个特征向量代表图像中的一个人脸。
+            在enter模式下，返回一个torch.Tensor类型的特征向量;
+            在checkin模式下，返回一个特征向量列表，每个特征向量是一个torch.Tensor类型的向量，代表图像中的一个人脸。
         """
         # 转换图像格式为模型输入的张量格式
         face_positions, _ = self.detect_faces(image)  # 检测并裁剪所有人脸，返回人脸图像列表
         if face_positions is None:
-            return []
+            if mode == 'enter':
+                return torch.empty(0)
+            else:
+                return []
         if mode == 'checkin':
             self.faces_count(face_positions)
         faces = []
@@ -52,11 +55,10 @@ class FaceID:
                     face = image.crop((x1, y1, x2, y2))
                     faces.append(face)
         features = []
-        for face in faces:
-            face_tensor = self.preprocess(face)  # 将每个人脸转换为张量
+        if len(faces)>0:
+            face_tensors = torch.stack([self.preprocess(face) for face in faces])
             with torch.no_grad():
-                feature_vector = self.model(face_tensor).squeeze()
-            features.append(feature_vector)
+                features = self.model(face_tensors)
         if mode == 'enter':
             return features[0]
         return features
@@ -77,8 +79,8 @@ class FaceID:
         使用余弦相似度判断两个特征向量是否相似。
         """
         # 将特征向量展平为一维
-        feature1 = feature1.flatten()
-        feature2 = feature2.flatten()
+        feature1 = feature1.flatten().cpu().numpy()
+        feature2 = feature2.flatten().cpu().numpy()
         
         # 归一化
         feature1_norm = feature1 / np.linalg.norm(feature1)
@@ -124,8 +126,8 @@ class FaceID:
     def preprocess(self, face_image):
         # 预处理人脸图像并转换为模型所需的输入格式
         face_image = face_image.resize((160, 160))
-        face_tensor = torch.tensor(np.array(face_image) / 255).permute(2, 0, 1).unsqueeze(0).float()
-        return face_tensor
+        face_tensor = torch.tensor(np.array(face_image) / 255).permute(2, 0, 1).float()
+        return face_tensor.to(self.device)
 
     def detect_faces(self, image):
         faces, probs = self.mtcnn.detect(image)

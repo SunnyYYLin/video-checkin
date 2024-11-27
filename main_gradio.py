@@ -11,7 +11,7 @@ from pydub import AudioSegment
 from io import BytesIO
 import asyncio
 import multiprocessing
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 from PIL import Image
 from voice_id import VoiceID, call_roll, call_name 
 from face_id import FaceID  
@@ -68,7 +68,6 @@ def train():
 #感觉这里得你来部署，传什么参数给谁，然后主函数添加判断即可
     
 #主函数
-
 def handle_inputs(mode: str, video_file:str =None, 
                   image: np.ndarray=None, 
                   audio: tuple[int, np.ndarray]=None, 
@@ -89,25 +88,14 @@ def handle_inputs(mode: str, video_file:str =None,
 
             print("正在存储学生特征...")
             # 将样本的人脸特征、声音特征和标签存储到数据库
-            database.store_feature(tag, face_feature, audio_feature)
+            database.add(tag, face_feature, audio_feature)
+            database.save()
             print("学生特征存储完成！")
             return {"result": True}
 
         case "train":
-            num_epochs = 10
-
-            print("正在训练脸部识别孪生网络模型...")
-            database.train_face_siamese_model(num_epochs)
-            print("语音识别模型训练完成！")
-
-            print("正在训练声音识别孪生网络模型...")
-            database.train_voice_siamese_model(num_epochs)
-            print("声音识别模型训练完成！")    
-            print("正在备份可识别同学信息...")
-            database.save_feature_db(filename="feature_db.pt")
-            print("可识别同学信息备份完成！")
-
-            #return ["Sample input successfully received"]
+            database.train_both(num_epochs=10, batch_size=16)
+            database.save()
             return {"result": True}
         
         case "check":
@@ -120,22 +108,28 @@ def handle_inputs(mode: str, video_file:str =None,
             audio = video.audio.to_soundarray(fps=rate)
             images = [Image.fromarray(img_array) for img_array in
                        video.iter_frames(fps=video.fps, dtype='uint8')]
+            images = images[::30]
 
             #提取图像、音频特征向量
+            print("正在提取人脸特征...")
             face_features = face_id.get_features_list(images)
+            print("人脸特征提取完成！")
+            print("正在提取声音特征...")
             audio_features = voice_id.extract_clip_features((rate, audio.T))
+            print("声音特征提取完成！")
 
             #识别人脸和声音
+            print("正在识别人脸...")
             text_list = database.recognize_faces(face_features)
-            for audio_feature in audio_features:
-                result = database.recognize_voice(audio_feature)
-                # 将识别结果添加到文本列表
-                if result not in text_list:
-                    text_list.append(result)
+            print("人脸识别完成！")
+            print("正在识别声音...")
+            text_list += database.recognize_voices(audio_features)
+            print("声音识别完成！")
+            text_list = list(set(text_list))
 
             dict = {}
             if not name_list:
-                name_list=database.get_all_names()
+                name_list=database.name_list
 
             # 检查识别结果是否在名单中
             for name in name_list:
@@ -156,7 +150,6 @@ async def async_call_name(name: str, voice: str= VOICE_SOURCE) -> Path:
     return out_path
 
 async def handle_stream(mode, input_data):
-    global PROCESS_POOL
     global arrived
     global stream_name_list
     global sign
@@ -165,66 +158,48 @@ async def handle_stream(mode, input_data):
     global voice_id_tasks
     global database_tasks
     global face_id_tasks
+    global is_call_started
+    global pool
     global next_call
 
     this_call = None
+    audio_result = None
+    face_results = []
     match mode:
         case "aud_stream":
-            voice_id.add_chunk((input_data[0],input_data[1].T))
-            # 提交任务到进程池
-            future = PROCESS_POOL.apply_async(voice_id.is_round_end)
-            vad_tasks.append(future)
-            for task in vad_tasks:
-                if task.ready() and task.get():
-                    print("检测到语音结束")
-                    num+=1
-                    if num<len(stream_name_list):
-                        this_call = next_call
-                        next_call = await async_call_name(stream_name_list[num])
-
-                    future_voice_id = PROCESS_POOL.apply_async(voice_id.extract_round_features)
-                    voice_id_tasks.append(future_voice_id)
-                    vad_tasks.remove(task)
-                    break
-
-            for task in voice_id_tasks:
-                if task.ready():
-                    audio_feature = task.get()
-                    future_database = PROCESS_POOL.apply_async(database.recognize_voice, args=(audio_feature,))
-                    database_tasks.append(future_database)
-                    voice_id_tasks.remove(task)
-                    break
+            audio = (input_data[0], input_data[1].T.astype(np.float32)/2**15)
+            voice_id.add_chunk(audio)
+            if voice_id.is_round_end():
+                if is_call_started:
+                    num += 1
+                    this_call = await next_call
+                    next_call = async_call_name(stream_name_list[num])
+                    if num == len(stream_name_list) - 1:
+                        is_call_started = False
+                        num = 0
+                
+                audio_feature = voice_id.extract_round_features()
+                audio_result = database.recognize_voice(audio_feature)
 
         case "img_stream":
             pil_image = Image.fromarray(input_data)
-            future_face_id = PROCESS_POOL.apply_async(face_id.extract_features, args=([pil_image],))
-            face_id_tasks.append(future_face_id)
-            for task in face_id_tasks:
-                if task.ready():
-                    face_features = task.get()
-                    future_database = PROCESS_POOL.apply_async(database.recognize_faces, args=(face_features,))
-                    database_tasks.append(future_database)
-                    face_id_tasks.remove(task)
-                    break
-
+            print("正在提取人脸特征...")
+            face_features = face_id.extract_features(pil_image, mode='checkin')
+            print(f"人脸特征提取完成: {face_features}")
+            face_results = database.recognize_faces(face_features)
+            
         case "start_check":
             this_call = await async_call_name(stream_name_list[num])
-            next_call = await async_call_name(stream_name_list[num+1])
+            num += 1
+            next_call = async_call_name(stream_name_list[num])
+            is_call_started = True
             return this_call
         
         case _:
             raise ValueError("Invalid mode! Please provide a valid mode.")
 
-    for task in database_tasks:
-        if task.ready():
-            if isinstance(task.get(), str): 
-                arrived.add(task.get())
-
-            elif isinstance(task.get(), list):
-                arrived.update(task.get())
-
-            database_tasks.remove(task)
-            break
+    arrived.add(audio_result)
+    arrived.update(face_results)
     
     return f"arrived: {arrived - {None}}\n", this_call
 
@@ -262,8 +237,9 @@ if __name__=="__main__":
     face_id_tasks: List[asyncio.Task] = []
 
     if not stream_name_list:
-        stream_name_list=database.get_all_names()
+        stream_name_list=database.name_list
 
+    is_call_started = False
     next_call = None
 #这里将控制移到最后，方便与主函数进行交互，并添加了实时检测的逻辑
 
@@ -369,5 +345,5 @@ if __name__=="__main__":
         #     )
 
     # 全局进程池
-    PROCESS_POOL = multiprocessing.Pool(processes=4)  # 设置进程池的大小，例如 2 个进程
+    pool = ThreadPoolExecutor(max_workers=4)
     demo.launch()
