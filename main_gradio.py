@@ -109,7 +109,7 @@ def handle_inputs(mode: str, video_file:str =None,
             audio = video.audio.to_soundarray(fps=rate)
             images = [Image.fromarray(img_array) for img_array in
                        video.iter_frames(fps=video.fps, dtype='uint8')]
-            images = images[::60]
+            images = images[::30]
 
             #提取图像、音频特征向量
             print("正在提取人脸特征...")

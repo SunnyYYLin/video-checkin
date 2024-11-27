@@ -66,8 +66,9 @@ class Database:
         self.face_siamese_model.to(self.device)
         self.voice_siamese_model.to(self.device)
         
-        self.face_threshold = self.auto_threshold(attr="face_features")
-        self.voice_threshold = self.auto_threshold(attr="voice_features")
+        if len(self.students) > 1:
+            self.face_threshold = self.auto_threshold(attr="face_features")
+            self.voice_threshold = self.auto_threshold(attr="voice_features")
     
     def add(self, name: str, face_feature_vector: torch.Tensor, voice_feature_vector: torch.Tensor) -> None:
         """
