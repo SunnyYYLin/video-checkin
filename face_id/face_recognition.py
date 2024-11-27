@@ -1,5 +1,4 @@
 from facenet_pytorch import InceptionResnetV1, MTCNN
-import cv2
 import torch
 from PIL import Image
 import numpy as np
@@ -31,12 +30,16 @@ class FaceID:
         参数:
             image: 包含人脸的PIL图像对象。
         返回:
-            特征向量列表，每个特征向量代表图像中的一个人脸。
+            在enter模式下，返回一个torch.Tensor类型的特征向量;
+            在checkin模式下，返回一个特征向量列表，每个特征向量是一个torch.Tensor类型的向量，代表图像中的一个人脸。
         """
         # 转换图像格式为模型输入的张量格式
         face_positions, _ = self.detect_faces(image)  # 检测并裁剪所有人脸，返回人脸图像列表
         if face_positions is None:
-            return []
+            if mode == 'enter':
+                return torch.empty(0)
+            else:
+                return []
         if mode == 'checkin':
             self.faces_count(face_positions)
         faces = []
@@ -52,11 +55,10 @@ class FaceID:
                     face = image.crop((x1, y1, x2, y2))
                     faces.append(face)
         features = []
-        for face in faces:
-            face_tensor = self.preprocess(face)  # 将每个人脸转换为张量
+        if len(faces)>0:
+            face_tensors = torch.stack([self.preprocess(face) for face in faces])
             with torch.no_grad():
-                feature_vector = self.model(face_tensor).squeeze()
-            features.append(feature_vector)
+                features = self.model(face_tensors)
         if mode == 'enter':
             return features[0]
         return features
@@ -124,7 +126,7 @@ class FaceID:
     def preprocess(self, face_image):
         # 预处理人脸图像并转换为模型所需的输入格式
         face_image = face_image.resize((160, 160))
-        face_tensor = torch.tensor(np.array(face_image) / 255).permute(2, 0, 1).unsqueeze(0).float()
+        face_tensor = torch.tensor(np.array(face_image) / 255).permute(2, 0, 1).float()
         return face_tensor.to(self.device)
 
     def detect_faces(self, image):
