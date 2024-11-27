@@ -77,6 +77,8 @@ class Database:
         :param face_feature_vector: 学生面部特征向量。
         :param voice_feature_vector: 学生语音特征向量。
         """
+        face_feature_vector = face_feature_vector.to(self.device)
+        voice_feature_vector = voice_feature_vector.to(self.device)
         if name in self.students:
             self.students[name].face_features.append(face_feature_vector)
             self.students[name].voice_features.append(voice_feature_vector)
@@ -320,10 +322,9 @@ class Database:
 
         # 提取所有学生的 prototype
         prototypes = {name: getattr(student, f"{attr[:-9]}_prototype") for name, student in self.students.items()}
+        prototypes = {name: proto for name, proto in prototypes.items() if proto is not None}
         
-        # 确保所有学生都有 prototype
-        if not all(proto is not None for proto in prototypes.values()):
-            raise ValueError(f"学生的 {attr} 原型尚未计算，请确保模型已训练并调用相应的训练方法！")
+        assert len(prototypes) > 1, "Not enough prototypes for threshold calculation"
 
         # 计算类间距离
         inter_distances = []

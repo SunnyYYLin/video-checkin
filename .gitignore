@@ -165,6 +165,7 @@ data/
 pretrained_models/
 audio/
 checkpoints/
+test/
 cut.py
 *.mp3
 *.mp4

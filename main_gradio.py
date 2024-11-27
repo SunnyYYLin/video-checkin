@@ -157,46 +157,37 @@ async def handle_stream(mode, input_data):
     global voice_id_tasks
     global database_tasks
     global face_id_tasks
-    global next_call
+    global is_call_started
     global pool
 
     this_call = None
     match mode:
         case "aud_stream":
-            audio_segment = AudioSegment(
-                input_data[1].tobytes(), 
-                frame_rate=input_data[0], 
-                sample_width=input_data[1].dtype.itemsize, 
-                channels=1
-            )
-            audio_segment.export(f"audio_stream_{time.time()}.wav", format="wav")
-            voice_id.add_chunk((input_data[0],input_data[1].T))
+            audio = (input_data[0], input_data[1].T.astype(np.float32)/2**15)
+            voice_id.add_chunk(audio)
             loop = asyncio.get_event_loop()
-            future = loop.run_in_executor(pool, voice_id.is_round_end)
-            vad_tasks.append(future)
-            for task in asyncio.as_completed(vad_tasks):
-                task = await task
-                if task:
-                    print("检测到语音结束")
-                    num+=1
-                    if num<len(stream_name_list):
-                        this_call = next_call
-                        next_call = await async_call_name(stream_name_list[num])
+            if voice_id.is_round_end():
+                print("检测到语音结束")
+                num+=1
+                if num<len(stream_name_list) and is_call_started:
+                    this_call = await next_call
+                    next_call = async_call_name(stream_name_list[num])
+                
+                if not voice_id_tasks:
                     loop = asyncio.get_event_loop()
                     future_voice_id = loop.run_in_executor(pool, voice_id.extract_round_features)
                     voice_id_tasks.append(future_voice_id)
-                    break
 
-            for task in asyncio.as_completed(voice_id_tasks):
-                    audio_feature = await task
+                if asyncio.as_completed(voice_id_tasks):
+                    audio_feature = await voice_id_tasks[0]
                     loop = asyncio.get_event_loop()
                     future_database = loop.run_in_executor(pool, database.recognize_voice, audio_feature)
                     database_tasks.append(future_database)
-                    break
 
         case "img_stream":
             pil_image = Image.fromarray(input_data)
-            future_face_id = asyncio.to_thread(face_id.extract_features, pil_image)
+            loop = asyncio.get_event_loop()
+            future_face_id = loop.run_in_executor(pool, face_id.extract_features, pil_image)
             face_id_tasks.append(future_face_id)
             for task in asyncio.as_completed(face_id_tasks):
                 face_features = await task
@@ -207,7 +198,8 @@ async def handle_stream(mode, input_data):
 
         case "start_check":
             this_call = await async_call_name(stream_name_list[num])
-            next_call = await async_call_name(stream_name_list[num+1])
+            next_call = async_call_name(stream_name_list[num+1])
+            is_call_started = True
             return this_call
         
         case _:
@@ -260,7 +252,7 @@ if __name__=="__main__":
     if not stream_name_list:
         stream_name_list=database.name_list
 
-    next_call = None
+    is_call_started = False
 #这里将控制移到最后，方便与主函数进行交互，并添加了实时检测的逻辑
 
     with gr.Blocks(fill_height=True) as demo:
