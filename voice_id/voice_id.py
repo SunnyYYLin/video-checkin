@@ -75,15 +75,16 @@ class VoiceID:
         if len(self.round_cache)//DEFAULT_RECORD_RATE >= MAX_ROUND_SECONDS:
             is_end = True
             self.last_is_end = False
+            self.last_round_cache = np.array([])
         else:
             envelope = np.abs(hilbert(self.round_cache))
             this_is_end = (np.max(envelope)> 0.5)
             is_end = self.last_is_end
             self.last_is_end = (not self.last_is_end) and this_is_end
-        
+            self.last_round_cache = self.round_cache.copy()
+            
         if is_end:
             print(f"检测到语音结束，当前长度: {self.round_cache.shape}")
-            self.last_round_cache = self.round_cache.copy()
             self.round_cache = np.array([])
             # import matplotlib.pyplot as plt
             # plt.plot(envelope)

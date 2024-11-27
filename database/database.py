@@ -152,6 +152,8 @@ class Database:
         :param face_feature_vector: 输入的面部特征向量。
         :return: 识别到的姓名。
         """
+        if face_feature_vector is None:
+            return None
         threshold = self.face_threshold if threshold is None else threshold
     
         # 提取所有 prototype 和对应的姓名
