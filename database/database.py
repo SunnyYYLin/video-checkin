@@ -235,6 +235,9 @@ class Database:
         :param voice_feature_vector: 输入的语音特征向量。
         :return: 识别到的姓名。
         """
+        if voice_feature_vector is None:
+            return None
+        
         threshold = self.voice_threshold if threshold is None else threshold
         
         # 提取所有 prototype 和对应的姓名
