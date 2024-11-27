@@ -185,7 +185,7 @@ async def handle_stream(mode, input_data):
             pil_image = Image.fromarray(input_data)
             print("正在提取人脸特征...")
             face_features = face_id.extract_features(pil_image, mode='checkin')
-            print(f"人脸特征提取完成: {face_features}")
+            print(f"人脸特征提取完成: {len(face_features)}")
             face_results = database.recognize_faces(face_features)
             
         case "start_check":
@@ -313,16 +313,15 @@ if __name__=="__main__":
                 outputs=[stream_output, play_audio],
                 time_limit=3,
                 stream_every=0.3,
-                show_progress=True,
-
+                show_progress="full"
             )
         image_stream.stream(
                 handle_stream,
                 inputs=[gr.State("img_stream"), image_stream],
                 outputs=[stream_output, play_audio],
-                time_limit=0.01,
-                stream_every=0.01,
-                show_progress=True,
+                time_limit=0.3,
+                stream_every=0.1,
+                show_progress="full"
             )
 
         begin_check_btn.click(handle_stream, inputs=start_signal, outputs=play_audio)

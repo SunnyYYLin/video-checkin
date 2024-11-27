@@ -178,13 +178,13 @@ class Database:
         similarities = F.cosine_similarity(face_feature_vector, prototype_matrix)  # Shape: (N,)
 
         # 找到相似度最高的 prototype
-        max_similarity, indices = torch.max(similarities, dim=0) # Shape: (1,)
+        max_similarity, idx = torch.max(similarities, dim=0) # Shape: (1,)
         print(f"横轴: {names}")
-        print(f"纵轴预测标签：{[names[idx] for idx in indices]}")
+        print(f"纵轴预测标签：{names[idx]}")
         print(f"相似度分别为：{similarities}")
 
         # 检查是否超过阈值
-        return names[indices] if max_similarity > threshold else None
+        return names[idx] if max_similarity > threshold else None
     
     @torch.no_grad()
     def recognize_faces(self, face_features: list[torch.Tensor], threshold: float=None) -> list[str]:
@@ -213,7 +213,10 @@ class Database:
         prototype_matrix = torch.stack(prototypes) # (num_prototypes, out_dim)
         
         # 将输入向量拼接成矩阵
-        face_feature_matrix = torch.stack(face_features)  # (batch_size, in_dim)
+        if isinstance(face_features, list):
+            face_feature_matrix = torch.stack(face_features) if len(face_features) > 1 else face_features[0]
+        else:
+            face_feature_matrix = face_features
         face_feature_matrix = face_feature_matrix.to(self.device)
         face_feature_matrix = self.face_siamese_model.forward_one(face_feature_matrix) # (batch_size, out_dim)
         
@@ -269,12 +272,12 @@ class Database:
         similarities = F.cosine_similarity(voice_feature_vector, prototype_matrix)  # Shape: (N,)
         
         # 找到相似度最高的 prototype
-        max_similarity, indices = torch.max(similarities, dim=0) # Shape: (1,)
+        max_similarity, idx = torch.max(similarities, dim=0) # Shape: (1,)
         print(f"横轴: {names}")
-        print(f"纵轴预测标签：{[names[idx] for idx in indices]}")
+        print(f"纵轴预测标签：{idx}")
         print(f"相似度分别为：{similarities}")
         
-        return names[indices] if max_similarity > threshold else None
+        return names[idx] if max_similarity > threshold else None
     
     @torch.no_grad()
     def recognize_voices(self, voice_features: torch.Tensor, threshold: float=None) -> list[str]:
@@ -326,7 +329,7 @@ class Database:
         return list(recognized_names)
     
     @torch.no_grad()
-    def auto_threshold(self, attr: str, alpha=0.7) -> float:
+    def auto_threshold(self, attr: str, alpha=0.8) -> float:
         """
         自动调整阈值，结合类内和类间距离动态计算。
         
