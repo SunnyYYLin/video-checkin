@@ -174,6 +174,7 @@ async def handle_stream(mode, input_data):
                     next_call = async_call_name(stream_name_list[num])
                     if num == len(stream_name_list) - 1:
                         is_call_started = False
+                        num = 0
                 
                 audio_feature = voice_id.extract_round_features()
                 audio_result = database.recognize_voice(audio_feature)
