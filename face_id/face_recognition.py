@@ -16,13 +16,23 @@ class FaceID:
         self.width_threshold = width_threshold
         self.height_threshold = height_threshold
 
-    def get_features_list(self,video: list[Image]):
+    def get_features(self,video: list[Image]):
+        """
+        通过图像列表得到一段视频中的所有人脸向量。
+        参数:
+            video：包含人脸的PIL图像序列。
+        返回：
+            如果检测到的人脸为空，返回None
+            否则返回一个形如(batchsize, dim)的特征向量batch
+        """
         features_list = []
         for img in video:
             features = self.extract_features(img, mode='checkin')
             self.is_new_feature(features, features_list)
-        
-        return features_list
+        if len(features_list) == 0:
+            return None
+        else:
+            return torch.stack(features_list)
 
     def extract_features(self, image: Image.Image, mode='enter'):
         """
