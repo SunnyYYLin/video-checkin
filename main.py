@@ -63,7 +63,7 @@ def handle_inputs(mode: str, video_file:str =None,
             #将NujmPy数组转换为PIL图像
             pil_image = Image.fromarray(image)
             # 提取人脸特征
-            face_feature = face_id.extract_features(pil_image, mode='enter') # (dim_face, )
+            face_feature = face_id.extract_features(pil_image, mode='enter').squeeze(0) # (dim_face, )
             # 提取声音特征
             audio_feature = voice_id.extract_label_features(audio) # (dim_audio, )
 
@@ -133,7 +133,10 @@ async def handle_stream(mode, input_data=None):
             audio = (input_data[0], input_data[1].T.astype(np.float32)/2**15)
             voice_id.add_chunk(audio)
             if voice_id.is_round_end():
+                print("正在提取声纹特征...")
                 audio_feature = voice_id.extract_round_features() # (dim_audio, )
+                print("声纹特征提取完成！")
+                print(audio_feature)
                 audio_result = database.recognize_voice(audio_feature)
 
         case "img_stream":
@@ -215,14 +218,13 @@ if __name__=="__main__":
                 with gr.Row():
                     audio_stream = gr.Audio(sources=["microphone"], type="numpy", label="请打开麦克风")
                     image_stream = gr.Image(sources=["webcam"], type="numpy", label="请打开摄像头")
-                begin_check_btn = gr.Button("开始检测")
                 stream_output = gr.Textbox(label="检测结果")
         
         audio_stream.stream(
                 handle_stream,
                 inputs=[gr.State("aud_stream"), audio_stream],
                 outputs=[stream_output],
-                time_limit=1,
+                time_limit=2,
                 stream_every=0.25,
                 show_progress="full"
             )

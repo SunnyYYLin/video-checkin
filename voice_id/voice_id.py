@@ -46,6 +46,7 @@ class VoiceID:
             Tensor: The extracted features, (1, emb_dim)
         '''
         if self.last_round_cache.size == 0:
+            print("未检测到有效语音，无法提取声纹特征！")
             return None
         else:
             features = self.extract_label_features((DEFAULT_RECORD_RATE, self.last_round_cache))
