@@ -23,6 +23,9 @@ DEFAULT_RECORD_RATE = 16_000
 
 class VoiceID:
     def __init__(self, config: Config) -> None:
+        self.round_threshold = config.voice_round_threshold
+        self.video_threshold = config.voice_video_threshold
+        
         # Load the Silero VAD model
         silero, utils = torch.hub.load(repo_or_dir='snakers4/silero-vad', 
                                       model='silero_vad', trust_repo=True)
@@ -68,28 +71,25 @@ class VoiceID:
     
     def is_round_end(self) -> bool:
         """
-        Determines if the current round has ended based on the the round cache
+        Determines if the current round has ended based on the round cache.
         Returns:
             bool: True if the round has ended, False otherwise.
         """
-        if len(self.round_cache)//DEFAULT_RECORD_RATE >= MAX_ROUND_SECONDS:
-            is_end = True
+        if len(self.round_cache) // DEFAULT_RECORD_RATE >= MAX_ROUND_SECONDS:
             self.last_is_end = False
             self.last_round_cache = np.array([])
-        else:
-            envelope = np.abs(hilbert(self.round_cache))
-            this_is_end = (np.max(envelope)> 0.5)
-            is_end = self.last_is_end
-            self.last_is_end = (not self.last_is_end) and this_is_end
-            self.last_round_cache = self.round_cache.copy()
-            
+            self.round_cache = np.array([])
+            return True
+        
+        envelope = np.abs(hilbert(self.round_cache))
+        this_is_end = np.max(envelope) > self.round_threshold
+        is_end = self.last_is_end
+        self.last_is_end = (not self.last_is_end) and this_is_end
+        
         if is_end:
             print(f"检测到语音结束，当前长度: {self.round_cache.shape}")
+            self.last_round_cache = self.round_cache.copy()
             self.round_cache = np.array([])
-            # import matplotlib.pyplot as plt
-            # plt.plot(envelope)
-            # plt.savefig(f'test/envelope_{time.time()}.png')
-            # plt.close()
         else:
             print(f"未检测到语音结束，当前长度: {self.round_cache.shape}")
         
@@ -135,7 +135,7 @@ class VoiceID:
         timestamps = self.get_speech_timestamps(wave, 
                         self.silero, 
                         sampling_rate=SILERO_SAMPLING_RATE,
-                        threshold=0.2, return_seconds=True)
+                        threshold=self.video_threshold, return_seconds=True)
         slices = [wave[:, int(stamp['start']*SILERO_SAMPLING_RATE):int(stamp['end']*SILERO_SAMPLING_RATE)]
                   for stamp in timestamps]
         for i, slice in enumerate(slices):

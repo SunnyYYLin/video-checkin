@@ -3,9 +3,6 @@ import os
 
 @dataclass
 class Config:
-    voice_source: str = 'zh-CN-XiaoxiaoNeural'
-    interval: float = 1.5
-    names_file: str = os.path.join("data", "names.txt")
     face_threshold: float = 0.7
     voice_threshold: float = 0.7
     face_threshold: float = 0.4
@@ -13,3 +10,5 @@ class Config:
     face_width_threshold: float  = 20
     face_height_threshold: float =20
     device: str ='cuda'
+    voice_round_threshold: float = 0.3
+    voice_video_threshold: float = 0.2
