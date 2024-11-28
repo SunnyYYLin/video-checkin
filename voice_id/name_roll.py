@@ -2,7 +2,6 @@ import edge_tts
 import asyncio
 from pydub import AudioSegment
 from io import BytesIO
-from bark import generate_audio
 from pathlib import Path
 import numpy as np
 import pyaudio
