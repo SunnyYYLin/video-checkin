@@ -1,15 +1,12 @@
 from typing import TypeAlias
-from speechbrain.inference import SpeakerRecognition, SpectralMaskEnhancement
+from speechbrain.inference import SpeakerRecognition
 from torch import Tensor
 import torch
 from torch.nn.utils.rnn import pad_sequence
 import numpy as np
-import torchaudio
 from config import Config
 from .utils import resample, cancel_channel, add_channel, to_numpy, to_tensor
 from scipy.signal import hilbert
-import time
-import matplotlib.pyplot as plt
 
 Audio: TypeAlias = tuple[int, np.ndarray|torch.Tensor]
 
