@@ -13,7 +13,7 @@ import asyncio
 import multiprocessing
 from concurrent.futures import ThreadPoolExecutor
 from PIL import Image
-from voice_id import VoiceID, call_roll, call_name 
+from voice_id import VoiceID, async_call_name_with_file
 from face_id import FaceID  
 from database import Database
 from config import Config
@@ -27,7 +27,7 @@ def waiting_local():
     }
     
 def sample(image, audio, text):
-    if image is None or audio is None or not isinstance(text, str) or not text.strip():
+    if (image is None and audio is None) or not isinstance(text, str) or not text.strip():
         return "样本输入失败！请确保所有内容都已填写并重新输入！"
     
     try:
@@ -72,34 +72,28 @@ def handle_inputs(mode: str, video_file:str =None,
                   image: np.ndarray=None, 
                   audio: tuple[int, np.ndarray]=None, 
                   tag: str=None):
-    global name_list
     match mode:
         case "sample":
-            # img_list.append(image)
-            # aud_list.append(audio)
-            name_list.append(tag)
             #将NujmPy数组转换为PIL图像
             pil_image = Image.fromarray(image)
             # 提取人脸特征
-            face_feature = face_id.extract_features(pil_image)
-
+            face_feature = face_id.extract_features(pil_image, mode='enter') # (dim_face, )
             # 提取声音特征
-            audio_feature = voice_id.extract_label_features(audio)
+            audio_feature = voice_id.extract_label_features(audio) # (dim_audio, )
 
             print("正在存储学生特征...")
-            # 将样本的人脸特征、声音特征和标签存储到数据库
             database.add(tag, face_feature, audio_feature)
             database.save()
             print("学生特征存储完成！")
             return {"result": True}
 
         case "train":
-            database.train_both(num_epochs=10, batch_size=16)
+            database.train_both(num_epochs=10, batch_size=8)
             database.save()
             return {"result": True}
         
         case "check":
-            text_list = []
+            arrived_list = []
             face_features = []
             #获取音频序列和图像序列
             # print(video_file)
@@ -112,42 +106,24 @@ def handle_inputs(mode: str, video_file:str =None,
 
             #提取图像、音频特征向量
             print("正在提取人脸特征...")
-            face_features = face_id.get_features_list(images)
+            face_features = face_id.get_features(images) # (batch_size, dim_face)
             print("人脸特征提取完成！")
             print("正在提取声音特征...")
-            audio_features = voice_id.extract_clip_features((rate, audio.T))
+            audio_features = voice_id.extract_clip_features((rate, audio.T)) # (batch_size, dim_audio)
             print("声音特征提取完成！")
 
             #识别人脸和声音
             print("正在识别人脸...")
-            text_list = database.recognize_faces(face_features)
+            arrived_list = database.recognize_faces(face_features)
             print("人脸识别完成！")
             print("正在识别声音...")
-            text_list += database.recognize_voices(audio_features)
+            arrived_list += database.recognize_voices(audio_features)
             print("声音识别完成！")
-            text_list = list(set(text_list))
-
-            dict = {}
-            if not name_list:
-                name_list=database.name_list
-
-            # 检查识别结果是否在名单中
-            for name in name_list:
-                if name in text_list:
-                    dict.update({name: True})
-                else:
-                    dict.update({name: False})
-
-            return dict
+            arrived_list = list(set(arrived_list))
+            return {name: (name in arrived_list) for name in database.name_list}
 
         case _:
             raise ValueError("Invalid mode! Please provide a valid mode.")
-
-async def async_call_name(name: str, voice: str= VOICE_SOURCE) -> Path:
-    communicate = edge_tts.Communicate(name, voice)
-    out_path = Path(f"audio/{name}.mp3")
-    await communicate.save(out_path)
-    return out_path
 
 async def handle_stream(mode, input_data):
     global arrived
@@ -173,25 +149,25 @@ async def handle_stream(mode, input_data):
                 if is_call_started:
                     num += 1
                     this_call = await next_call
-                    next_call = async_call_name(stream_name_list[num])
-                    if num == len(stream_name_list) - 1:
+                    next_call = async_call_name_with_file(database.name_list[num])
+                    if num == len(database.name_list) - 1:
                         is_call_started = False
                         num = 0
                 
-                audio_feature = voice_id.extract_round_features()
+                audio_feature = voice_id.extract_round_features() # (dim_audio, )
                 audio_result = database.recognize_voice(audio_feature)
 
         case "img_stream":
             pil_image = Image.fromarray(input_data)
             print("正在提取人脸特征...")
-            face_features = face_id.extract_features(pil_image, mode='checkin')
+            face_features = face_id.extract_features(pil_image, mode='checkin') # (batch_size, dim_face)
             print(f"人脸特征提取完成: {len(face_features)}")
             face_results = database.recognize_faces(face_features)
             
         case "start_check":
-            this_call = await async_call_name(stream_name_list[num])
+            this_call = await async_call_name_with_file(stream_name_list[num])
             num += 1
-            next_call = async_call_name(stream_name_list[num])
+            next_call = async_call_name_with_file(stream_name_list[num])
             is_call_started = True
             return this_call
         
@@ -231,10 +207,6 @@ if __name__=="__main__":
     arrived: set[str] = set()  # 记录已经到达
     num=0
     sign=True
-    vad_tasks: List[asyncio.Task] = []
-    voice_id_tasks: List[asyncio.Task] = []
-    database_tasks: List[asyncio.Task] = []
-    face_id_tasks: List[asyncio.Task] = []
 
     if not stream_name_list:
         stream_name_list=database.name_list

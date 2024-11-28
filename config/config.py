@@ -6,3 +6,5 @@ class Config:
     voice_source: str = 'zh-CN-XiaoxiaoNeural'
     interval: float = 1.5
     names_file: str = os.path.join("data", "names.txt")
+    face_threshold: float = 0.7
+    voice_threshold: float = 0.7

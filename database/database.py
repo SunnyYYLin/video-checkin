@@ -34,7 +34,7 @@ from .siamese_net import SiameseNetwork, ContrastiveLoss, train
 from .dataset import FeaturePairDataset, FeatureEntry, Student
 
 class Database:
-    def __init__(self) -> None:
+    def __init__(self, config) -> None:
         """
         数据库类，用于存储学生的面部特征和语音特征，并提供训练和识别功能。
         """
@@ -66,9 +66,8 @@ class Database:
         self.face_siamese_model.to(self.device)
         self.voice_siamese_model.to(self.device)
         
-        if len(self.students) > 1:
-            self.face_threshold = self.auto_threshold(attr="face_features")
-            self.voice_threshold = self.auto_threshold(attr="voice_features")
+        self.face_threshold = config.face_threshold
+        self.voice_threshold = config.voice_threshold
     
     def add(self, name: str, face_feature_vector: torch.Tensor, voice_feature_vector: torch.Tensor) -> None:
         """
@@ -150,7 +149,7 @@ class Database:
         """
         识别输入的面部特征向量并返回相应的姓名。
         
-        :param face_feature_vector: 输入的面部特征向量。
+        :param face_feature_vector: 输入的面部特征向量。(dim_feature, )
         :return: 识别到的姓名。
         """
         if face_feature_vector is None:
@@ -168,17 +167,17 @@ class Database:
         if not prototypes:
             return None
         
-        face_feature_vector = face_feature_vector.unsqueeze(0).to(self.device)
-        face_feature_vector = self.face_siamese_model.forward_one(face_feature_vector)
+        face_feature_vector = face_feature_vector.unsqueeze(0).to(self.device) # (1, dim_feature)
+        face_feature_vector = self.face_siamese_model.forward_one(face_feature_vector) # (1, out_dim)
 
         # 将所有 prototype 拼接成矩阵
-        prototype_matrix = torch.stack(prototypes)  # Shape: (N, D)
+        prototype_matrix = torch.stack(prototypes)  # (num_prototypes, out_dim)
         
         # 计算输入向量与所有 prototype 的余弦相似度
-        similarities = F.cosine_similarity(face_feature_vector, prototype_matrix)  # Shape: (N,)
+        similarities = F.cosine_similarity(face_feature_vector, prototype_matrix)  # (num_prototypes,)
 
         # 找到相似度最高的 prototype
-        max_similarity, idx = torch.max(similarities, dim=0) # Shape: (1,)
+        max_similarity, idx = torch.max(similarities, dim=0) # (1, )
         print(f"横轴: {names}")
         print(f"纵轴预测标签：{names[idx]}")
         print(f"相似度分别为：{similarities}")
@@ -187,10 +186,10 @@ class Database:
         return names[idx] if max_similarity > threshold else None
     
     @torch.no_grad()
-    def recognize_faces(self, face_features: list[torch.Tensor], threshold: float=None) -> list[str]:
+    def recognize_faces(self, face_features: torch.Tensor, threshold: float=None) -> list[str]:
         """
         批量处理面部特征向量列表，返回所有匹配的学生姓名。
-        :param face_features: 面部特征向量列表
+        :param face_features: 面部特征向量列表 (batch_size, dim_feature)
         :return: 匹配的学生姓名列表
         """
         if len(face_features) == 0:
@@ -212,16 +211,11 @@ class Database:
         # 将所有 prototype 拼接成矩阵
         prototype_matrix = torch.stack(prototypes) # (num_prototypes, out_dim)
         
-        # 将输入向量拼接成矩阵
-        if isinstance(face_features, list):
-            face_feature_matrix = torch.stack(face_features) if len(face_features) > 1 else face_features[0]
-        else:
-            face_feature_matrix = face_features
-        face_feature_matrix = face_feature_matrix.to(self.device)
-        face_feature_matrix = self.face_siamese_model.forward_one(face_feature_matrix) # (batch_size, out_dim)
+        face_features = face_features.to(self.device) # (batch_size, in_dim)
+        face_features = self.face_siamese_model.forward_one(face_features) # (batch_size, out_dim)
         
         # 计算所有输入向量与所有 prototype 的余弦相似度 (batch_size, num_prototypes)
-        similarities = F.cosine_similarity(face_feature_matrix.unsqueeze(1), prototype_matrix.unsqueeze(0), dim=2)  # Shape: (M, N)
+        similarities = F.cosine_similarity(face_features.unsqueeze(1), prototype_matrix.unsqueeze(0), dim=2)  # Shape: (M, N)
         
         # 找到每个输入向量的最高相似度及对应的索引
         max_similarities, indices = torch.max(similarities, dim=1)  # (batch_size,)
@@ -243,7 +237,7 @@ class Database:
         """
         识别输入的语音特征向量并返回相应的姓名。
         
-        :param voice_feature_vector: 输入的语音特征向量。
+        :param voice_feature_vector: 输入的语音特征向量。(dim_feature, )
         :return: 识别到的姓名。
         """
         if voice_feature_vector is None:
@@ -262,17 +256,17 @@ class Database:
         if not prototypes:
             return None
 
-        voice_feature_vector = voice_feature_vector.unsqueeze(0).to(self.device)
-        voice_feature_vector = self.voice_siamese_model.forward_one(voice_feature_vector) # Shape: (1, D)
+        voice_feature_vector = voice_feature_vector.unsqueeze(0).to(self.device) # (1, dim_feature)
+        voice_feature_vector = self.voice_siamese_model.forward_one(voice_feature_vector) # (1, out_dim)
         
         # 将所有 prototype 拼接成矩阵
-        prototype_matrix = torch.stack(prototypes)  # Shape: (N, D)
+        prototype_matrix = torch.stack(prototypes)  # (num_prototypes, out_dim)
         
         # 计算输入向量与所有 prototype 的余弦相似度
-        similarities = F.cosine_similarity(voice_feature_vector, prototype_matrix)  # Shape: (N,)
+        similarities = F.cosine_similarity(voice_feature_vector, prototype_matrix)  # (num_prototypes,)
         
         # 找到相似度最高的 prototype
-        max_similarity, idx = torch.max(similarities, dim=0) # Shape: (1,)
+        max_similarity, idx = torch.max(similarities, dim=0) # (1,)
         print(f"横轴: {names}")
         print(f"纵轴预测标签：{name[idx]}")
         print(f"相似度分别为：{similarities}")
@@ -284,7 +278,7 @@ class Database:
         """
         批量处理语音特征向量列表，返回所有匹配的学生姓名。
         
-        :param voice_features: 语音特征向量列表。
+        :param voice_features: 语音特征向量。(batch_size, dim_feature)
         :return: 匹配的学生姓名列表。
         """
         if len(voice_features) == 0:

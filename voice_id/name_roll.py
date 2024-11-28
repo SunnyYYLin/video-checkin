@@ -2,8 +2,20 @@ import edge_tts
 import asyncio
 from pydub import AudioSegment
 from io import BytesIO
+from pathlib import Path
 
 VOICE_SOURCE = 'zh-CN-XiaoxiaoNeural'
+
+async def async_call_name_with_file(name: str, voice: str= VOICE_SOURCE) -> Path:
+    communicate = edge_tts.Communicate(name, voice)
+    cache_dir = Path(f"audio_cache")
+    if not cache_dir.exists():
+        cache_dir.mkdir()
+    await communicate.save(cache_dir/f"{name}.mp3")
+    return cache_dir/f"{name}.mp3"
+
+def call_name_with_file(name: str, voice: str=VOICE_SOURCE) -> Path:
+    return asyncio.run(async_call_name_with_file(name, voice))
 
 async def async_call_name(name: str, voice: str= VOICE_SOURCE) -> AudioSegment:
     # 使用 edge_tts 异步生成音频数据
