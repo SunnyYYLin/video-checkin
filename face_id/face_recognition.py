@@ -4,17 +4,17 @@ from PIL import Image
 import numpy as np
 
 class FaceID:
-    def __init__(self, threshold=0.4, count_threshold = 12, width_threshold = 20, height_threshold =20, device='cuda'):
+    def __init__(self, config):
         # 初始化模型，设置相似度阈值
-        self.device = torch.device(device)
+        self.device = torch.device(config.device)
         self.model = InceptionResnetV1(pretrained='vggface2').to(self.device).eval()
-        self.threshold = threshold
+        self.threshold = config.face_threshold
         self.mtcnn = MTCNN(keep_all=True, device=self.device)
         self.positions = [] #用来记录各个人脸框的区域
         self.count = [] # 用来记录每个区域连续出现的次数
-        self.count_threshold = count_threshold # 连续出现次数的阈值
-        self.width_threshold = width_threshold
-        self.height_threshold = height_threshold
+        self.count_threshold = config.face_count_threshold # 连续出现次数的阈值
+        self.width_threshold = config.face_width_threshold
+        self.height_threshold = config.face_height_threshold
 
     def get_features(self,video: list[Image]):
         """

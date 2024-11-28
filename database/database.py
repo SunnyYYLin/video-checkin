@@ -268,7 +268,7 @@ class Database:
         # 找到相似度最高的 prototype
         max_similarity, idx = torch.max(similarities, dim=0) # (1,)
         print(f"横轴: {names}")
-        print(f"纵轴预测标签：{name[idx]}")
+        print(f"纵轴预测标签：{names[idx]}")
         print(f"相似度分别为：{similarities}")
         
         return names[idx] if max_similarity > threshold else None

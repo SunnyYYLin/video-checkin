@@ -195,14 +195,8 @@ if __name__=="__main__":
 
     config = Config()
     voice_id = VoiceID(config)
-
-    # 创建 FaceID 实例
-    face_config = {"device": "cuda"}  
-    face_id = FaceID(**face_config)
-
-    # 创建 Database 实例
-    # db_config = {}  
-    database = Database()
+    face_id = FaceID(config)
+    database = Database(config)
 
     arrived: set[str] = set()  # 记录已经到达
     num=0
