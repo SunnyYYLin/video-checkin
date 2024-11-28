@@ -1,150 +1,238 @@
-# main.py
-
 import gradio as gr
 import numpy as np
-import torch
-import moviepy.editor as mp
-import librosa
+import moviepy as mp
 from PIL import Image
-from audio_recognition import VoiceID  
-from face_recognition import FaceID  
-from database_module6 import Database  
+from voice_id import VoiceID
+from face_id import FaceID  
+from database import Database
+from config import Config
 
-# 读取视频文件并将其分解为图像和音频序列
-def split_video(video_file):
-    # 读视频
-    video = mp.VideoFileClip(video_file)
-    # 获取图像序列
-    frames = []
-    for frame in video.iter_frames():
-        frames.append(frame)
-    # 获取音频序列
-    audio = video.audio.to_soundarray()
-    return audio,frames
+VOICE_SOURCE = 'zh-CN-XiaoxiaoNeural'
 
-# 处理音频数据
-def process_audio_data(audio_frames, voice_id):
-    audio_feature = None
-    for audio_frame in audio_frames:
-        # 将每帧声音流转换为 torch.Tensor
-        audio_tensor = torch.tensor(audio_frame)
-        voice_id.add_frames([audio_tensor])
-
-        # 判断一轮问答是否结束
-        if voice_id.is_round_end():
-            audio_feature = voice_id.extract_round_features()
-            # 清除已处理的音频帧
-            del audio_frames[:audio_frames.index(audio_frame) + 1]
-            break  # 假设我们在一轮问答结束后停止处理
-    return audio_feature
-
-# 处理图像数据
-def process_image_data(image_frames, face_id, face_features):
-    # 设置提取人脸特征的间隔帧数
-    frame_interval = 5  # 每隔5帧提取一次人脸特征
-    # 初始化计数器
-    frame_count = 0
-
-    for image_frame in image_frames:
-    # 每隔 frame_interval 帧提取一次人脸特征
-        if frame_count % frame_interval == 0:
-            # 提取人脸特征
-            face_feature = face_id.extract_features(image_frame)
-            # 检测并添加新的人脸特征
-            face_id.is_new_features([face_feature], face_features)
+def waiting_local():
+    return {
+        wait_local: gr.Textbox(label="检测中", visible=True)
+    }
     
-        # 增加计数器
-        frame_count += 1
-
-# 识别
-def recognize(image_frames, audio_frames,voice_id, face_id, database):
-    # 存储特征向量
-    face_features = []
-    text_list = []
-
-    # 先进行人脸识别
-    process_image_data(image_frames, face_id, face_features)
-    text_list = database.recognize_faces(face_features)
+def sample(image, audio, text):
+    if (image is None and audio is None) or not isinstance(text, str) or not text.strip():
+        return "样本输入失败！请确保所有内容都已填写并重新输入！"
     
-    while True:
-        # 检查输入数据是否为空
-        if not audio_frames:
-            break
+    try:
+        result = handle_inputs(mode="sample", image=image, audio=audio, tag=text )
+    except ValueError as e:
+        return f"样本输入失败！发生错误：{str(e)}"
     
-        audio_feature = None
-        for audio_frame in audio_frames:
-            # 将每帧声音流转换为 torch.Tensor
-            audio_tensor = torch.tensor(audio_frame)
-            voice_id.add_frames([audio_tensor])
+    if result is None:
+        return "样本输入失败！请重新输入！"
+    elif result.get("result", False):
+        return "样本输入成功！"
+    else:
+        return "样本输入失败！请重新输入！"
 
-            # 判断一轮问答是否结束
-            if voice_id.is_round_end():
-                audio_feature = voice_id.extract_round_features()
-                # 清除已处理的音频帧
-                del audio_frames[:audio_frames.index(audio_frame) + 1]
-                break  # 假设我们在一轮问答结束后停止处理    
-
-        # 将特征向量传输给识别系统
-        if audio_feature is not None:
-            result = database.recognize_voice(audio_feature)
-            # 将识别结果添加到文本列表
-            if result not in text_list:
-                text_list.append(result)
+def check_local(video):
+    namedict = handle_inputs(mode="check", video_file=video)
+    if namedict is None: 
+        return {
+            wait_local: gr.Textbox(label="计算中", visible=False),
+            output_check_local_true: gr.Textbox(value="无效输入，请重新输入！", label="无效输入", visible=True),
+            output_check_local_false: gr.Textbox(value="", visible=False),
+            check_local_btn: gr.Button(visible=True),
+        }
+    true_names = [name for name, value in namedict.items() if value]
+    false_names = [name for name, value in namedict.items() if not value]
+    return {
+        wait_local: gr.Textbox(label="计算中", visible=False),
+        output_check_local_true: gr.Textbox(value="\n".join(true_names), label="到教室的人", visible=True),
+        output_check_local_false: gr.Textbox(value="\n".join(false_names), label="缺勤的人", visible=True),
+        check_local_btn: gr.Button(visible=True),
+    }
     
-    return text_list
-
+def train():
+    yield "训练中......"
+    handle_inputs(mode="train")
+    yield "训练完成！" 
+    
 #主函数
-def main(video_file, image, audio, tag):
-    # 创建 VoiceID 实例
-    # voice_config = {"param1": "value1", "param2": "value2"}  #参数配置,后续添加
-    voice_id = VoiceID()
+def handle_inputs(mode: str, video_file:str =None, 
+                  image: np.ndarray=None, 
+                  audio: tuple[int, np.ndarray]=None, 
+                  tag: str=None):
+    match mode:
+        case "sample":
+            #将NujmPy数组转换为PIL图像
+            pil_image = Image.fromarray(image)
+            # 提取人脸特征
+            face_feature = face_id.extract_features(pil_image, mode='enter') # (dim_face, )
+            # 提取声音特征
+            audio_feature = voice_id.extract_label_features(audio) # (dim_audio, )
 
-    # 创建 FaceID 实例
-    face_config = {"device": "cuda"}  
-    face_id = FaceID(face_config)
+            print("正在存储学生特征...")
+            database.add(tag, face_feature, audio_feature)
+            database.save()
+            print("学生特征存储完成！")
+            return {"result": True}
 
-    # 创建 Database 实例
-    # db_config = {}  
-    database = Database()
+        case "train":
+            database.train_both(num_epochs=10, batch_size=8)
+            database.save()
+            return {"result": True}
+        
+        case "check":
+            arrived_list = []
+            face_features = []
+            #获取音频序列和图像序列
+            # print(video_file)
+            video = mp.VideoFileClip(video_file)
+            rate = video.audio.fps
+            audio = video.audio.to_soundarray(fps=rate)
+            images = [Image.fromarray(img_array) for img_array in
+                       video.iter_frames(fps=video.fps, dtype='uint8')]
+            images = images[::30]
 
-    # 从输入中获取视频文件并进行检测
-    if video_file is not None:
-        test_list = []
+            #提取图像、音频特征向量
+            print("正在提取人脸特征...")
+            face_features = face_id.get_features(images) # (batch_size, dim_face)
+            print("人脸特征提取完成！")
+            print("正在提取声音特征...")
+            audio_features = voice_id.extract_clip_features((rate, audio.T)) # (batch_size, dim_audio)
+            print("声音特征提取完成！")
 
-        #获取音频序列和图像序列
-        audio_frames, image_frames = split_video(video_file)
+            #识别人脸和声音
+            print("正在识别人脸...")
+            arrived_list = database.recognize_faces(face_features)
+            print("人脸识别完成！")
+            print("正在识别声音...")
+            arrived_list += database.recognize_voices(audio_features)
+            print("声音识别完成！")
+            arrived_list = list(set(arrived_list))
+            return {name: (name in arrived_list) for name in database.name_list}
 
-        #识别
-        test_list = recognize(image_frames, audio_frames, voice_id, face_id, database)
+        case _:
+            raise ValueError("Invalid mode! Please provide a valid mode.")
 
-        return test_list
+async def handle_stream(mode, input_data=None):
+    global arrived
+    global stream_name_list
+    global sign
+    global num
+    global vad_tasks
+    global voice_id_tasks
+    global database_tasks
+    global face_id_tasks
+    global has_started
+    global pool
+    global next_call
+
+    this_call = None
+    audio_result = None
+    face_results = []
     
-    #读入样本数据
-    elif image is not None and audio is not None and tag is not None:
-        #将NujmPy数组转换为PIL图像
-        pil_image = Image.fromarray(image)
-        # 提取人脸特征
-        face_feature = face_id.extract_features(pil_image)
+    match mode:
+        case "aud_stream":
+            audio = (input_data[0], input_data[1].T.astype(np.float32)/2**15)
+            voice_id.add_chunk(audio)
+            if voice_id.is_round_end():
+                audio_feature = voice_id.extract_round_features() # (dim_audio, )
+                audio_result = database.recognize_voice(audio_feature)
 
-        # 提取声音特征
-        audio_feature = voice_id.extract_label_features(audio)
+        case "img_stream":
+            pil_image = Image.fromarray(input_data)
+            print("正在提取人脸特征...")
+            face_features = face_id.extract_features(pil_image, mode='checkin') # (batch_size, dim_face)
+            print(f"人脸特征提取完成: {len(face_features)}")
+            face_results = database.recognize_faces(face_features)
+        
+        case _:
+            raise ValueError("Invalid mode! Please provide a valid mode.")
 
-        print("正在存储学生特征...")
-        # 将样本的人脸特征、声音特征和标签存储到数据库
-        database.store_feature(tag, face_feature, audio_feature)
-        print("学生特征存储完成！")
+    arrived.add(audio_result)
+    arrived.update(face_results)
+    
+    return f"arrived: {arrived - {None}}\n"
+    
+def audio_playback_finished():
+    global play_state
+    play_state.value = 'idle'
 
-        num_epochs = 10
+if __name__=="__main__": 
+    img_list = []
+    aud_list = []
+    name_list = []
+    stream_name_list = []
 
-        print("正在训练脸部识别孪生网络模型...")
-        database.train_face_siamese_model(num_epochs)
-        print("语音识别模型训练完成！")
+    config = Config()
+    voice_id = VoiceID(config)
+    face_id = FaceID(config)
+    database = Database(config)
 
-        print("正在训练声音识别孪生网络模型...")
-        database.train_voice_siamese_model(num_epochs)
-        print("声音识别模型训练完成！")
+    arrived: set[str] = set()  # 记录已经到达
+    num=0
+    sign=True
 
-        return ["Sample input successfully received"]
+    if not stream_name_list:
+        stream_name_list=database.name_list
 
-if __name__ == "__main__":
-    main()
+    next_call = None
+    #这里将控制移到最后，方便与主函数进行交互，并添加了实时检测的逻辑
+
+    with gr.Blocks(fill_height=True) as demo:
+        
+        gr.Markdown(
+            """
+            <h1 style="text-align: center;">点到器</h1>
+            <p style="text-align: center;">这是一个结合人脸识别与声纹识别的点到器,可以上传视频来检测到教室的人。</p>
+            """
+        )
+        
+        with gr.Tab("输入样本"):
+            with gr.Column():
+                with gr.Row(equal_height=True):
+                    img = gr.Image(label="请输入人脸")
+                    aud = gr.Audio(label="请输入人声")
+                name = gr.Textbox(label="请输入人名")
+                output_sample = gr.Textbox(label="运行结果")
+                train_status = gr.Textbox(label="训练状态")
+                sample_btn = gr.Button("输入样本")
+                begin_btn = gr.Button("开始训练") 
+                
+        sample_btn.click(sample, inputs=[img,aud,name], outputs=output_sample)
+        begin_btn.click(train, inputs=None, outputs=train_status ) 
+                
+        with gr.Tab("视频检测：本地视频版"):
+            with gr.Column():
+                input_check = gr.Video(label="输入待检测的本地视频", format='mp4')
+                check_local_btn = gr.Button("开始检测")
+                wait_local = gr.Textbox(label="计算中", visible=False)
+                output_check_local_true = gr.Textbox(label="检测结果：到教室的人", visible=False)
+                output_check_local_false = gr.Textbox(label="检测结果：缺勤的人", visible=False)
+
+        check_local_btn.click(waiting_local,inputs=None,outputs=wait_local).\
+            then(check_local, inputs=input_check, outputs=[wait_local,output_check_local_true, output_check_local_false, check_local_btn])
+            
+        with gr.Tab("视频检测：实时检测版"):
+            with gr.Column():
+                with gr.Row():
+                    audio_stream = gr.Audio(sources=["microphone"], type="numpy", label="请打开麦克风")
+                    image_stream = gr.Image(sources=["webcam"], type="numpy", label="请打开摄像头")
+                begin_check_btn = gr.Button("开始检测")
+                stream_output = gr.Textbox(label="检测结果")
+        
+        audio_stream.stream(
+                handle_stream,
+                inputs=[gr.State("aud_stream"), audio_stream],
+                outputs=[stream_output],
+                time_limit=1,
+                stream_every=0.25,
+                show_progress="full"
+            )
+        image_stream.stream(
+                handle_stream,
+                inputs=[gr.State("img_stream"), image_stream],
+                outputs=[stream_output],
+                time_limit=0.1,
+                stream_every=0.1,
+                show_progress="full"
+            )
+        
+    demo.launch()
