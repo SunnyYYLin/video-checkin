@@ -4,7 +4,7 @@ from PIL import Image
 import numpy as np
 
 class FaceID:
-    def __init__(self, threshold=0.4, count_threshold = 2, width_threshold = 20, height_threshold =20, device='cuda'):
+    def __init__(self, threshold=0.4, count_threshold = 12, width_threshold = 20, height_threshold =20, device='cuda'):
         # 初始化模型，设置相似度阈值
         self.device = torch.device(device)
         self.model = InceptionResnetV1(pretrained='vggface2').to(self.device).eval()
@@ -16,13 +16,23 @@ class FaceID:
         self.width_threshold = width_threshold
         self.height_threshold = height_threshold
 
-    def get_features_list(self,video: list[Image]):
+    def get_features(self,video: list[Image]):
+        """
+        通过图像列表得到一段视频中的所有人脸向量。
+        参数:
+            video：包含人脸的PIL图像序列。
+        返回：
+            如果检测到的人脸为空，返回None
+            否则返回一个形如(batchsize, dim)的特征向量batch
+        """
         features_list = []
         for img in video:
             features = self.extract_features(img, mode='checkin')
             self.is_new_feature(features, features_list)
-        
-        return features_list
+        if len(features_list) == 0:
+            return None
+        else:
+            return torch.stack(features_list)
 
     def extract_features(self, image: Image.Image, mode='enter'):
         """
@@ -30,8 +40,7 @@ class FaceID:
         参数:
             image: 包含人脸的PIL图像对象。
         返回:
-            在enter模式下，返回一个torch.Tensor类型的特征向量;
-            在checkin模式下，返回一个特征向量列表，每个特征向量是一个torch.Tensor类型的向量，代表图像中的一个人脸。
+            一个形如(batchsize, dim)的特征向量batch
         """
         # 转换图像格式为模型输入的张量格式
         face_positions, _ = self.detect_faces(image)  # 检测并裁剪所有人脸，返回人脸图像列表
@@ -59,8 +68,6 @@ class FaceID:
             face_tensors = torch.stack([self.preprocess(face) for face in faces])
             with torch.no_grad():
                 features = self.model(face_tensors)
-        if mode == 'enter':
-            return features[0]
         return features
 
     def is_new_feature(self, feature_vectors, existing_features_list):
