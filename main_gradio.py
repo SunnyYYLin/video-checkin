@@ -236,8 +236,8 @@ if __name__=="__main__":
                 handle_stream,
                 inputs=[gr.State("aud_stream"), audio_stream],
                 outputs=[stream_output],
-                time_limit=3,
-                stream_every=0.3,
+                time_limit=1,
+                stream_every=0.25,
                 show_progress="full"
             )
         image_stream.stream(
@@ -249,6 +249,4 @@ if __name__=="__main__":
                 show_progress="full"
             )
         
-        
-
     demo.launch()

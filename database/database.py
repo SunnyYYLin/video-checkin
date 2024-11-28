@@ -168,8 +168,9 @@ class Database:
             return None
         
         face_feature_vector = face_feature_vector.unsqueeze(0).to(self.device) # (1, dim_feature)
+        self.face_siamese_model.eval()
         face_feature_vector = self.face_siamese_model.forward_one(face_feature_vector) # (1, out_dim)
-
+        
         # 将所有 prototype 拼接成矩阵
         prototype_matrix = torch.stack(prototypes)  # (num_prototypes, out_dim)
         
@@ -212,6 +213,7 @@ class Database:
         prototype_matrix = torch.stack(prototypes) # (num_prototypes, out_dim)
         
         face_features = face_features.to(self.device) # (batch_size, in_dim)
+        self.face_siamese_model.eval()
         face_features = self.face_siamese_model.forward_one(face_features) # (batch_size, out_dim)
         
         # 计算所有输入向量与所有 prototype 的余弦相似度 (batch_size, num_prototypes)
@@ -257,6 +259,7 @@ class Database:
             return None
 
         voice_feature_vector = voice_feature_vector.unsqueeze(0).to(self.device) # (1, dim_feature)
+        self.face_siamese_model.eval()
         voice_feature_vector = self.voice_siamese_model.forward_one(voice_feature_vector) # (1, out_dim)
         
         # 将所有 prototype 拼接成矩阵
@@ -302,6 +305,7 @@ class Database:
         
         # 将输入向量拼接成矩阵
         voice_features = voice_features.to(self.device) # (batch_size, in_dim)
+        self.face_siamese_model.eval()
         voice_features = self.voice_siamese_model.forward_one(voice_features) # (batch_size, out_dim)
         
         # 计算所有输入向量与所有 prototype 的余弦相似度 (batch_size, num_prototypes)
