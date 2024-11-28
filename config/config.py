@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-import os
 
 @dataclass
 class Config:
