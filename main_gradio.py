@@ -65,7 +65,6 @@ def train():
     handle_inputs(mode="train")
     yield "训练完成！" 
     
-#感觉这里得你来部署，传什么参数给谁，然后主函数添加判断即可
     
 #主函数
 def handle_inputs(mode: str, video_file:str =None, 
@@ -96,7 +95,6 @@ def handle_inputs(mode: str, video_file:str =None,
             arrived_list = []
             face_features = []
             #获取音频序列和图像序列
-            # print(video_file)
             video = mp.VideoFileClip(video_file)
             rate = video.audio.fps
             audio = video.audio.to_soundarray(fps=rate)
@@ -188,7 +186,6 @@ if __name__=="__main__":
         stream_name_list=database.name_list
 
     next_call = None
-    #这里将控制移到最后，方便与主函数进行交互，并添加了实时检测的逻辑
 
     with gr.Blocks(fill_height=True) as demo:
         
