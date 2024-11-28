@@ -17,7 +17,6 @@ XVECTOR_SAMPLING_RATE = 16_000
 METRICGAN_SAMPLING_RATE = 16_000
 SILERO_SAMPLING_RATE = 16_000
 WHISPER_SAMPLING_RATE = 16_000
-MAX_ROUND_SECONDS = 1.5
 ECAPA_SAMPLING_RATE = 16_000
 DEFAULT_RECORD_RATE = 16_000
 
@@ -25,6 +24,7 @@ class VoiceID:
     def __init__(self, config: Config) -> None:
         self.round_threshold = config.voice_round_threshold
         self.video_threshold = config.voice_video_threshold
+        self.max_round_seconds = config.voice_max_round_seconds
         
         # Load the Silero VAD model
         silero, utils = torch.hub.load(repo_or_dir='snakers4/silero-vad', 
@@ -75,7 +75,8 @@ class VoiceID:
         Returns:
             bool: True if the round has ended, False otherwise.
         """
-        if len(self.round_cache) // DEFAULT_RECORD_RATE >= MAX_ROUND_SECONDS:
+        if len(self.round_cache) // DEFAULT_RECORD_RATE >= self.max_round_seconds:
+            print(f"检测到语音超时，当前长度: {self.round_cache.shape}")
             self.last_is_end = False
             self.last_round_cache = np.array([])
             self.round_cache = np.array([])

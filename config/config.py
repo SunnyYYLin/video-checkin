@@ -11,3 +11,4 @@ class Config:
     device: str ='cuda'
     voice_round_threshold: float = 0.3
     voice_video_threshold: float = 0.2
+    voice_max_round_seconds: float = 3
